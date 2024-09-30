@@ -23,10 +23,13 @@ sel.register(lsock, selectors.EVENT_READ, data=None)
 
 def accept_wrapper(sock):
     conn, addr = sock.accept() #Socket should already be read to read if this fn is called
+
     print(f"Accepted connection from {addr}")
     conn.setblocking(False)
+
     data = types.SimpleNamespace(addr = addr, inb = b"", outb = b"")
     events = selectors.EVENT_READ | selectors.EVENT_WRITE
+    
     sel.register(conn, events, data = data)
 
 

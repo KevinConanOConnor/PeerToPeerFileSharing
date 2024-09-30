@@ -5,6 +5,9 @@ import types
 import errno
 import struct
 
+import threading
+import queue
+
 HOST = "127.0.0.1"  # The server's hostname or IP address, 127.0.0.1 is localhost 
 PORT = 65432  # The port used by the server
 
@@ -17,7 +20,19 @@ with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
 """
     
 sel = selectors.DefaultSelector()
+input_queue = queue.Queue() #Queue to handle user requests
 
+
+#Function to receive input from the user (e.g. ask server what files are available, ask to download files)
+def receive_user_input():
+    while True:
+        user_input = input("Enter command:")
+        if user_input:
+            input_queue.put(user_input) #Send input to this queue, when this queue is full it should be handled
+
+#Function to handle/process user input requests
+def handle_user_command(command):
+        print(f"User requested completion of {command}")
 
 #This function should take in an ip and port number and return a TCP socket connection to that IP/Port
 def open_connection(ip, port_number):
@@ -98,15 +113,16 @@ def handle_connection(key, mask):
             print(f"Closing connection to {data.endpoint}")
             sel.unregister(sock)
             sock.close()
-    
+            
     if mask & selectors.EVENT_WRITE and data.outgoing_buffer:
         sent = sock.send(data.outgoing_buffer) #Non-blocking send (Hopefully the message should have already been encoded prior to being put into the buffer)
         data.outgoing_buffer = data.outgoing_buffer[sent: ] #Remove sent part from the buffer
 
 
+#Main event loop to handle checking sockets and user input
 def event_loop():
-    stdinData = types.SimpleNamespace(type = "stdin")
-    sel.register(sys.stdin, selectors.EVENT_READ, data = stdinData)
+    threading.Thread(target = receive_user_input, daemon=True).start()
+
 
     try:
         while True:
@@ -116,13 +132,16 @@ def event_loop():
                 print("No sockets Registered")
                 break
             """
+            #Check for user input
+            while not input_queue.empty():
+                userCommand = input_queue.get()
+                handle_user_command(userCommand)
+
+
             events = sel.select(timeout=None)
             for key, mask in events:
-                if key.data.type == "stdin": #Handle user input (Prioritized over handling socket)
-                    print("Placeholder")
-                elif key.data.type == "sock":
+                if key.data.type == "sock":
                     handle_connection(key, mask)
-            
                 
     except KeyboardInterrupt:
         print("caught Keyboard Interrupt, Exiting")
