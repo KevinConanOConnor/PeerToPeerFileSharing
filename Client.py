@@ -13,17 +13,19 @@ import queue
 HOST = "127.0.0.1"  # The server's hostname or IP address, 127.0.0.1 is localhost 
 PORT = 65432  # The port used by the server
 
-
-"""
-with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-    s.connect((HOST, PORT))
-    s.sendall(b"Hello, world")
-    data = s.recv(1024)
-"""
-    
 sel = selectors.DefaultSelector()
 input_queue = queue.Queue() #Queue to handle user requests
 
+
+#Open up a listening socket so that the client can listen for other P2P connections
+lsock =  socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+lsock.bind((HOST, 0))
+    
+print("Client Listening on " +  str(lsock))
+lsock.listen()
+
+lsock.setblocking(False)
+sel.register(lsock, selectors.EVENT_READ, data=None)
 
 #Function to receive input from the user (e.g. ask server what files are available, ask to download files)
 def receive_user_input():
@@ -125,6 +127,26 @@ def open_connection(ip, port_number):
 
     return sock
 
+def accept_incoming_connection(sock):
+    conn, addr = sock.accept() #Socket should already be read to read if this fn is called
+
+    print(f"Accepted connection from {addr}")
+    conn.setblocking(False)
+
+    #Buffers will be registered to each socket for incoming and outgoing data to ensure no data is lost from incomplete sends and receives.
+    data = types.SimpleNamespace(
+            type = 'client', #Client only receives new connections with client connections
+
+            incoming_buffer = b'',
+            messageLength = None, #to record how many bytes we should expect an incoming message to be (to make sure we receive messages in their entirety)
+
+            outgoing_buffer =  b'',
+        )
+    
+    events = selectors.EVENT_READ | selectors.EVENT_WRITE
+
+    sel.register(conn, events, data = data)
+
 def close_connection(sock):
     sel.unregister(sock)
     sock.close()
@@ -181,6 +203,10 @@ def handle_connection(key, mask):
 
     #print(data)
     if mask & selectors.EVENT_READ: #Ready to read data
+        #Handle case where socket is the listening socket handling a new P2P connection
+        if data is None:
+            accept_incoming_connection(sock)
+
         received = sock.recv(1024)
 
         if received:
