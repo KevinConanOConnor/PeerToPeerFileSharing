@@ -5,6 +5,8 @@ import types
 import errno
 import struct
 
+
+#User input handled on a separate thread from sockets
 import threading
 import queue
 
@@ -99,36 +101,48 @@ def open_server_connection(ip = HOST, port_number = PORT, timeout = 5):
 
 #This function should take in an ip and port number and return a TCP socket connection to that IP/Port
 def open_connection(ip, port_number):
-        server_addr = (ip, port_number)
-        print(f"Starting Connection to {server_addr}")
+    server_addr = (ip, port_number)
+    print(f"Starting Connection to {server_addr}")
 
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.setblocking(False)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setblocking(False)
 
-        #Attempt to connect
-        result = sock.connect_ex(server_addr)
+    #Attempt to connect
+    result = sock.connect_ex(server_addr)
 
-        if result == 0:
-            print(f"Connection to {server_addr} successful immediately")
+    if result == 0:
+        print(f"Connection to {server_addr} successful immediately")
 
-        elif result == errno.EINPROGRESS or result == errno.EWOULDBLOCK:
-            print(f"Connection to {server_addr} in progress")
+    elif result == errno.EINPROGRESS or result == errno.EWOULDBLOCK:
+        print(f"Connection to {server_addr} in progress")
 
-        else:
-            print(f"Error connecting to {server_addr}")
-            sock.close()
-            return None
+    else:
+        print(f"Error connecting to {server_addr}")
+        sock.close()
+        return None
 
-        register_socket_selector(sock = sock)
+    register_socket_selector(sock = sock)
 
-        return sock
+    return sock
 
 def close_connection(sock):
     sel.unregister(sock)
     sock.close()
 
-#This function will send a message of a fixed length to a packet. This function should receive the information of an open socket connection. It should also receive 
-def send_message(sock, version, msg_type, payload):
+def package_message():
+    print("placeholder")
+
+#This function will send a message of a fixed length to a packet. This function should receive the information of an open socket connection. It should also receive a message in bit format to be sent 
+def send_message(sock, message):
+    """
+    send_message will handle the adding of messages to an outgoing socket buffer. This function will take in a message that should have already been packaged
+    into a bit readable format for the receiver. (call package_message first)
+    """
+    key = sel.get_key(sock)
+    data = key.data
+
+    key.data.outgoing_buffer += message;
+
     print("placeholder")
     
 
@@ -136,6 +150,7 @@ def handle_connection(key, mask):
     sock = key.fileobj
     data = key.data
 
+    print(data)
     if mask & selectors.EVENT_READ: #Ready to read data
         received = sock.recv(1024)
 
@@ -203,6 +218,9 @@ if __name__ == "__main__":
     #Start connection to Server(Tracker)
     serverSock = open_server_connection()
 
+    blah_message = b"blahblahblah"
+
+    send_message(serverSock, b"blahblahblah")
     event_loop()
 
 

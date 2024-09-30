@@ -29,14 +29,14 @@ def accept_wrapper(sock):
 
     data = types.SimpleNamespace(addr = addr, inb = b"", outb = b"")
     events = selectors.EVENT_READ | selectors.EVENT_WRITE
-    
+
     sel.register(conn, events, data = data)
 
 
 def service_connection(key, mask):
     sock = key.fileobj
     data = key.data
-    print(data)
+    #print(data)
 
     if mask & selectors.EVENT_READ:
         #try:
@@ -45,7 +45,8 @@ def service_connection(key, mask):
          #   print("Unhandled Read Error")
             
         if recv_data:
-            data.outb += recv_data
+            print(recv_data)
+            data.inb += recv_data
         else:
             print(f"Closing connection {data.addr}")
             sel.unregister(sock)
