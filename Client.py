@@ -147,17 +147,14 @@ def unpackage_message(message):
     """
     Unpackage message will handle the interpretation of messages received. 
         Arguments:
-            message: message data in bytes form, should still contain header data (4 bytes length, 4 bytes type)
+            message: message data in bytes form, should still contain header data without the length (, 4 bytes type)
         
     """
 
-    #Unpack the length, I don't think I really have a use for it at this point though
-    message_length = total_message_length = struct.unpack('!I', message[:4])[0]
+    #Unpack the type, will handle types of messages and different formats of contents later
+    message_type = struct.unpack('!I', message[:4])[0]
 
-    #will handle message types l8r
-    message_type = struct.unpack('!I', message[4:8])[0]
-
-    message_content = message[8:].decode('utf-8')
+    message_content = message[4:].decode('utf-8')
 
     return message_content
     
@@ -182,7 +179,7 @@ def handle_connection(key, mask):
     sock = key.fileobj
     data = key.data
 
-    print(data)
+    #print(data)
     if mask & selectors.EVENT_READ: #Ready to read data
         received = sock.recv(1024)
 
@@ -191,7 +188,7 @@ def handle_connection(key, mask):
             data.incoming_buffer += received
 
             #If we don't know the incoming message length yet. We should try to read it
-            if data.messageLength is None and len(data.incoming_buffer >= 4):
+            if data.messageLength is None and len(data.incoming_buffer) >= 4:
                 #We can extract first 4 bytes as this is the message length prefix
                 data.messageLength = struct.unpack('!I', data.incoming_buffer[:4])[0] #
                 data.incoming_buffer = data.incoming_buffer[4:]
@@ -211,7 +208,7 @@ def handle_connection(key, mask):
             # For demonstration, we immediately echo back the received data
             #data.outgoing_buffer += received  # Add it to outgoing buffer to echo it back
         else: #If 0 bytes received, client closed connection
-            print(f"Closing connection to {data.endpoint}")
+            print(f"Closing connection to {sock}")
             sel.unregister(sock)
             sock.close()
             
