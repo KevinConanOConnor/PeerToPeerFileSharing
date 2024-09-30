@@ -129,7 +129,39 @@ def close_connection(sock):
     sel.unregister(sock)
     sock.close()
 
-def package_message():
+def package_message(message_type, message_content):
+    """
+    package_message will handle the packaging of messages into a format receivable by clients and peers in our system. Returns a message encoded into bytes.
+    """
+    content_bytes = message_content.encode('utf-8')
+
+    #The length of the message is 4 for type header (int) + content bytes
+    message_length = 4 + len(content_bytes)
+    #Pack message length as (4 bytes int) and message type as 4 bytes int, all in network byte order (!)
+    header = struct.pack('!I I', message_length, message_type)
+
+    finalMessage = header + content_bytes
+    return finalMessage
+
+def unpackage_message(message):
+    """
+    Unpackage message will handle the interpretation of messages received. 
+        Arguments:
+            message: message data in bytes form, should still contain header data (4 bytes length, 4 bytes type)
+        
+    """
+
+    #Unpack the length, I don't think I really have a use for it at this point though
+    message_length = total_message_length = struct.unpack('!I', message[:4])[0]
+
+    #will handle message types l8r
+    message_type = struct.unpack('!I', message[4:8])[0]
+
+    message_content = message[8:].decode('utf-8')
+
+    return message_content
+    
+
     print("placeholder")
 
 #This function will send a message of a fixed length to a packet. This function should receive the information of an open socket connection. It should also receive a message in bit format to be sent 
@@ -160,16 +192,19 @@ def handle_connection(key, mask):
 
             #If we don't know the incoming message length yet. We should try to read it
             if data.messageLength is None and len(data.incoming_buffer >= 4):
-                #We can extract first 4 bytes as this be the message length prefix
-                data.messageLength = struct.unpack('!I', data.incoming_buffer[:4])[0] #Network byte order?????
+                #We can extract first 4 bytes as this is the message length prefix
+                data.messageLength = struct.unpack('!I', data.incoming_buffer[:4])[0] #
                 data.incoming_buffer = data.incoming_buffer[4:]
                 print(f"Expected Message Length {data.messageLength} bytes")
 
             #If we do know the message length, we should process/clear incoming buffer once it has been fully received
             if data.messageLength is not None and len(data.incoming_buffer) >= data.messageLength:
                 message = data.incoming_buffer[:data.messageLength]
-                #NEED TO PROCESS MESSAGE HERE
-                data.incoming_buffer = data.incoming_buffer[data.messageLength: ] #Remove the message from buffer
+
+                #NEED TO PROCESS MESSAGE HERE (For now just print the processed message)
+                print(unpackage_message(message))
+
+                data.incoming_buffer = data.incoming_buffer[data.messageLength: ] #Clear the message from buffer
                 data.messageLength = None #Reset message length so that we know there's no message currently
 
 
@@ -218,9 +253,9 @@ if __name__ == "__main__":
     #Start connection to Server(Tracker)
     serverSock = open_server_connection()
 
-    blah_message = b"blahblahblah"
 
-    send_message(serverSock, b"blahblahblah")
+    msg = package_message(1, "I speak the truth in Christ—I am not lying, my conscience confirms it through the Holy Spirit— 2 I have great sorrow and unceasing anguish in my heart. 3 For I could wish that I myself were cursed and cut off from Christ for the sake of my people, those of my own race, 4 the people of Israel. Theirs is the adoption to sonship; theirs the divine glory, the covenants, the receiving of the law, the temple worship and the promises. 5 Theirs are the patriarchs, and from them is traced the human ancestry of the Messiah, who is God over all, forever praised![a] Amen.")
+    send_message(serverSock, msg)
     event_loop()
 
 
