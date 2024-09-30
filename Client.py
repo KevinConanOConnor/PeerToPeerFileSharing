@@ -34,6 +34,69 @@ def receive_user_input():
 def handle_user_command(command):
         print(f"User requested completion of {command}")
 
+
+def register_socket_selector(sock, selector = sel, connection_type = "client"):
+    """
+    Register socket connection to be handled by a selector
+
+    Arguments:
+          sock: socket to be registered
+          selector: selector object to register socket to (default is sel, a global selector)
+          connection_type: Data to be stored for each connection so we can differentiate types of connection (probably just client vs server)
+    
+    Returns: N/A
+    """
+    events = selectors.EVENT_READ | selectors.EVENT_WRITE
+
+    
+    #Buffers will be registered to each socket for incoming and outgoing data to ensure no data is lost from incomplete sends and receives.
+    data = types.SimpleNamespace(
+            type = connection_type,
+
+            incoming_buffer = b'',
+            messageLength = None, #to record how many bytes we should expect an incoming message to be (to make sure we receive messages in their entirety)
+
+            outgoing_buffer =  b'',
+        )
+    
+    sel.register(sock, events, data = data)
+
+
+def open_server_connection(ip = HOST, port_number = PORT, timeout = 5):
+    """
+    Connect to a server using the host and port specified as file constants. This connection will be handled in a blocking manner at first,
+    as there is no reason to worry about blocking other messages before we have even established a connection with the central server
+
+    Arguments:
+        ip:
+        port_number:
+        timeout: The number of seconds you would like to wait before timing out the server    
+    
+    Returns:
+        socket: The connected socket if successful, or None if the connection fails.
+
+    Raises:
+        socket.timeout: If the connection attempt exceeds the specified timeout.
+        ConnectionRefusedError: If the server is not accepting connections (Server.py probably not running on it)
+    """
+    server_addr = (ip, port_number)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+
+    try:
+        sock.connect(server_addr)
+        print(f"Connected to Main Server at {server_addr}")
+
+        # Change connection to non blocking after connection is opened
+        sock.setblocking(False)
+
+        register_socket_selector(sock = sock, connection_type = "server")
+        
+        return sock
+
+    except Exception as e:
+        print(f"Error Occured trying to establish connection to main server")
+
+
 #This function should take in an ip and port number and return a TCP socket connection to that IP/Port
 def open_connection(ip, port_number):
         server_addr = (ip, port_number)
@@ -56,19 +119,7 @@ def open_connection(ip, port_number):
             sock.close()
             return None
 
-        events = selectors.EVENT_READ | selectors.EVENT_WRITE
-
-        #Buffers will be registered to each socket for incoming and outgoing data to ensure no data is lost from incomplete sends and receives.
-        data = types.SimpleNamespace(
-            type = "sock",
-            endpoint = server_addr, #Which peer/server the connection is to
-            incoming_buffer = b'',
-            messageLength = None, #to record how many bytes we should expect an incoming message to be (so we know if we have received it all)
-
-            outgoing_buffer =  b'',
-        )
-
-        sel.register(sock, events, data = data)
+        register_socket_selector(sock = sock)
 
         return sock
 
@@ -140,7 +191,6 @@ def event_loop():
 
             events = sel.select(timeout=None)
             for key, mask in events:
-                if key.data.type == "sock":
                     handle_connection(key, mask)
                 
     except KeyboardInterrupt:
@@ -151,7 +201,7 @@ def event_loop():
 
 if __name__ == "__main__":
     #Start connection to Server(Tracker)
-    serverSock = open_connection(HOST, PORT)
+    serverSock = open_server_connection()
 
     event_loop()
 
