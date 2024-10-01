@@ -192,10 +192,7 @@ def send_message(sock, message):
     key = sel.get_key(sock)
     data = key.data
 
-    key.data.outgoing_buffer += message;
-
-    print("placeholder")
-    
+    key.data.outgoing_buffer += message;    
 
 def handle_connection(key, mask):
     sock = key.fileobj
@@ -275,7 +272,6 @@ def event_loop():
 if __name__ == "__main__":
     #Start connection to Server(Tracker)
     serverSock = open_server_connection()
-
 
     msg = package_message(1, "I speak the truth in Christ—I am not lying, my conscience confirms it through the Holy Spirit— 2 I have great sorrow and unceasing anguish in my heart. 3 For I could wish that I myself were cursed and cut off from Christ for the sake of my people, those of my own race, 4 the people of Israel. Theirs is the adoption to sonship; theirs the divine glory, the covenants, the receiving of the law, the temple worship and the promises. 5 Theirs are the patriarchs, and from them is traced the human ancestry of the Messiah, who is God over all, forever praised![a] Amen.")
     send_message(serverSock, msg)

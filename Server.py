@@ -20,6 +20,7 @@ lsock.listen()
 lsock.setblocking(False)
 sel.register(lsock, selectors.EVENT_READ, data=None)
 
+
 def package_message(message_type, message_content):
     """
     package_message will handle the packaging of messages into a format receivable by clients and peers in our system. Returns a message encoded into bytes.
@@ -36,7 +37,7 @@ def package_message(message_type, message_content):
 
 def unpackage_message(message):
     """
-    Unpackage message will handle the interpretation of messages received. 
+    Unpackage message will handle the unpacking of messages received.  WI
         Arguments:
             message: message data in bytes form, should still contain header data without the length (, 4 bytes type)
         
@@ -47,7 +48,7 @@ def unpackage_message(message):
 
     message_content = message[4:].decode('utf-8')
 
-    return message_content
+    return (message_type, message_content)
     
 
     print("placeholder")
@@ -72,32 +73,27 @@ def accept_incoming_connection(sock):
 
     sel.register(conn, events, data = data)
 
-"""
-def service_connection(key, mask):
-    sock = key.fileobj
+
+#This function will send a message of a fixed length to a packet. This function should receive the information of an open socket connection. It should also receive a message in bit format to be sent 
+def send_message(sock, message):
+    """
+    send_message will handle the adding of messages to an outgoing socket buffer. This function will take in a message that should have already been packaged
+    into a bit readable format for the receiver. (call package_message first)
+    """
+    key = sel.get_key(sock)
     data = key.data
-    #print(data)
 
-    if mask & selectors.EVENT_READ:
-        #try:
-        recv_data = sock.recv(1024) #Should be ready to read
-        #except Exception as e:
-         #   print("Unhandled Read Error")
-            
-        if recv_data:
-            print(recv_data)
-            data.inb += recv_data
-        else:
-            print(f"Closing connection {data.addr}")
-            sel.unregister(sock)
-            sock.close()
+    key.data.outgoing_buffer += message;  
 
-    if mask & selectors.EVENT_WRITE:
-        if data.outb:
-            print(f"Echoing {data.outb!r} to {data.addr}")
-            sent = sock.send(data.outb) #Should be ready to write
-            data.outb = data.outb[sent:]
-"""
+
+#With the decoded message and type passed in, this function should handle the Server's reaction to the message based on the type and content
+def handle_message_reaction(sock, message_type, message_content):
+    if message_type == 1:
+        print(message_content)
+        send_message(sock, package_message(2, "I actually don't know what to do for the file list yet lol"))
+    else:
+        send_message(sock, package_message(0, "Message Type Not Recognized"))
+
 
 def handle_connection(key, mask):
     sock = key.fileobj
@@ -123,7 +119,11 @@ def handle_connection(key, mask):
                 message = data.incoming_buffer[:data.messageLength]
 
                 #NEED TO PROCESS MESSAGE HERE (For now just print the processed message)
-                print(unpackage_message(message))
+                (message_type, message_content) = unpackage_message(message)
+                
+                #Server's reaction to message
+                handle_message_reaction(sock, message_type, message_content)
+
 
                 data.incoming_buffer = data.incoming_buffer[data.messageLength: ] #Clear the message from buffer
                 data.messageLength = None #Reset message length so that we know there's no message currently
@@ -141,40 +141,18 @@ def handle_connection(key, mask):
         data.outgoing_buffer = data.outgoing_buffer[sent: ] #Remove sent part from the buffer
 
 
-try:
-    while True:
+while True:
+    try:
         events = sel.select(timeout = None)
         for key, mask in events:
             if key.data is None:
                 accept_incoming_connection(key.fileobj)
             else:
                 handle_connection(key, mask)
-except KeyboardInterrupt:
-    print("Caught keyboard interrupt, exiting")
-finally:
-    sel.close()
+    except KeyboardInterrupt:
+        print("Caught keyboard interrupt, exiting")
+    except Exception as e:
+        print(f"An error occured")
 
+sel.close()
 
-
-
-"""
-    conn, addr = s.accept()
-    with conn:
-        print(f"connected by {addr}")
-        while True:
-            data = conn.recv(1024)
-            if not data:
-                break
-            conn.sendall(data)
-"""
-
-#def start_server(server_port):
-    
-
-
-""""
-if __name__ == "__main__":
-    SERVER_PORT = 8000
-    start_server(SERVER_PORT)
-
-"""
