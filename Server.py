@@ -10,12 +10,30 @@ sel = selectors.DefaultSelector()
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 PORT = 65432  # Port to listen on (non-privileged ports are > 1023)
 
+connections = 0;
 
 lsock =  socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 lsock.bind((HOST, PORT))
     
 print("Listening on " +  str(PORT))
 lsock.listen()
+
+sharedFileList = []
+
+#Use Dictionaries to store which files we have, which users have that file, and which chunks each file has.
+file_list = {
+    "file1": #Format for example
+    {
+        "hash": "931231923etc.", #Hashcode to differentiate that files with different names are actually same file
+        "chunkCount": "", #Count of Chunks in file to make sure peers can't register the presence of non existing chunks
+        #List of users with parts of the file, "Key here will be a cid string assigned when a connection is established"
+        "users":
+        {
+            "user1": {"chunks" : {0, 1, 2}},
+
+        },
+    },
+}
 
 lsock.setblocking(False)
 sel.register(lsock, selectors.EVENT_READ, data=None)

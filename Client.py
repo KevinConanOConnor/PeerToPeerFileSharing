@@ -13,6 +13,8 @@ import queue
 HOST = "127.0.0.1"  # The server's hostname or IP address, 127.0.0.1 is localhost 
 PORT = 65432  # The port used by the server
 
+connections = 0;
+
 sel = selectors.DefaultSelector()
 input_queue = queue.Queue() #Queue to handle user requests
 
@@ -130,13 +132,17 @@ def open_connection(ip, port_number):
 def accept_incoming_connection(sock):
     conn, addr = sock.accept() #Socket should already be read to read if this fn is called
 
-    print(f"Accepted connection from {addr}")
+    connections += 1
+    newCid = "inc" + connections
+
+    print(f"Accepted connection {connections} from {addr} and assigned {newCid}")
     conn.setblocking(False)
 
     #Buffers will be registered to each socket for incoming and outgoing data to ensure no data is lost from incomplete sends and receives.
     data = types.SimpleNamespace(
             type = 'client', #Client only receives new connections with client connections
 
+            cid = newCid,
             incoming_buffer = b'',
             messageLength = None, #to record how many bytes we should expect an incoming message to be (to make sure we receive messages in their entirety)
 
