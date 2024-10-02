@@ -13,21 +13,10 @@ import queue
 HOST = "127.0.0.1"  # The server's hostname or IP address, 127.0.0.1 is localhost 
 PORT = 65432  # The port used by the server
 
-connections = 0;
-
+    
 sel = selectors.DefaultSelector()
 input_queue = queue.Queue() #Queue to handle user requests
 
-
-#Open up a listening socket so that the client can listen for other P2P connections
-lsock =  socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-lsock.bind((HOST, 0))
-    
-print("Client Listening on " +  str(lsock))
-lsock.listen()
-
-lsock.setblocking(False)
-sel.register(lsock, selectors.EVENT_READ, data=None)
 
 #Function to receive input from the user (e.g. ask server what files are available, ask to download files)
 def receive_user_input():
@@ -129,30 +118,6 @@ def open_connection(ip, port_number):
 
     return sock
 
-def accept_incoming_connection(sock):
-    conn, addr = sock.accept() #Socket should already be read to read if this fn is called
-
-    connections += 1
-    newCid = "inc" + connections
-
-    print(f"Accepted connection {connections} from {addr} and assigned {newCid}")
-    conn.setblocking(False)
-
-    #Buffers will be registered to each socket for incoming and outgoing data to ensure no data is lost from incomplete sends and receives.
-    data = types.SimpleNamespace(
-            type = 'client', #Client only receives new connections with client connections
-
-            cid = newCid,
-            incoming_buffer = b'',
-            messageLength = None, #to record how many bytes we should expect an incoming message to be (to make sure we receive messages in their entirety)
-
-            outgoing_buffer =  b'',
-        )
-    
-    events = selectors.EVENT_READ | selectors.EVENT_WRITE
-
-    sel.register(conn, events, data = data)
-
 def close_connection(sock):
     sel.unregister(sock)
     sock.close()
@@ -198,7 +163,15 @@ def send_message(sock, message):
     key = sel.get_key(sock)
     data = key.data
 
-    key.data.outgoing_buffer += message;    
+    key.data.outgoing_buffer += message;
+    
+#With the decoded message and type passed in, this function should handle the Server's reaction to the message based on the type and content
+def handle_message_reaction(sock, message_type, message_content):
+    if message_type == 1:
+        print(message_content)
+        send_message(sock, package_message(2, "I actually don't know what to do for the file list yet lol"))
+    else:
+        send_message(sock, package_message(0, "Message Type Not Recognized"))
 
 def handle_connection(key, mask):
     sock = key.fileobj
@@ -206,10 +179,6 @@ def handle_connection(key, mask):
 
     #print(data)
     if mask & selectors.EVENT_READ: #Ready to read data
-        #Handle case where socket is the listening socket handling a new P2P connection
-        if data is None:
-            accept_incoming_connection(sock)
-
         received = sock.recv(1024)
 
         if received:
@@ -278,6 +247,7 @@ def event_loop():
 if __name__ == "__main__":
     #Start connection to Server(Tracker)
     serverSock = open_server_connection()
+
 
     msg = package_message(1, "I speak the truth in Christ—I am not lying, my conscience confirms it through the Holy Spirit— 2 I have great sorrow and unceasing anguish in my heart. 3 For I could wish that I myself were cursed and cut off from Christ for the sake of my people, those of my own race, 4 the people of Israel. Theirs is the adoption to sonship; theirs the divine glory, the covenants, the receiving of the law, the temple worship and the promises. 5 Theirs are the patriarchs, and from them is traced the human ancestry of the Messiah, who is God over all, forever praised![a] Amen.")
     send_message(serverSock, msg)

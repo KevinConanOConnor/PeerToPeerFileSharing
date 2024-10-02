@@ -10,15 +10,6 @@ sel = selectors.DefaultSelector()
 HOST = "127.0.0.1"  # Standard loopback interface address (localhost)
 PORT = 65432  # Port to listen on (non-privileged ports are > 1023)
 
-connections = 0;
-
-lsock =  socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-lsock.bind((HOST, PORT))
-    
-print("Listening on " +  str(PORT))
-lsock.listen()
-
-sharedFileList = []
 
 #Use Dictionaries to store which files we have, which users have that file, and which chunks each file has.
 file_list = {
@@ -30,14 +21,20 @@ file_list = {
         "users":
         {
             "user1": {"chunks" : {0, 1, 2}},
-
         },
     },
 }
 
+connections = 0
+
+lsock =  socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+lsock.bind((HOST, PORT))
+    
+print("Listening on " +  str(PORT))
+lsock.listen()
+
 lsock.setblocking(False)
 sel.register(lsock, selectors.EVENT_READ, data=None)
-
 
 def package_message(message_type, message_content):
     """
@@ -55,7 +52,7 @@ def package_message(message_type, message_content):
 
 def unpackage_message(message):
     """
-    Unpackage message will handle the unpacking of messages received.  WI
+    Unpackage message will handle the unpacking of messages received. 
         Arguments:
             message: message data in bytes form, should still contain header data without the length (, 4 bytes type)
         
@@ -68,17 +65,40 @@ def unpackage_message(message):
 
     return (message_type, message_content)
     
+#This function will send a message of a fixed length to a packet. This function should receive the information of an open socket connection. It should also receive a message in bit format to be sent 
+def send_message(sock, message):
+    """
+    send_message will handle the adding of messages to an outgoing socket buffer. This function will take in a message that should have already been packaged
+    into a bit readable format for the receiver. (call package_message first)
+    """
+    key = sel.get_key(sock)
+    data = key.data
 
-    print("placeholder")
+    key.data.outgoing_buffer += message;
+
+
+#With the decoded message and type passed in, this function should handle the Server's reaction to the message based on the type and content
+def handle_message_reaction(sock, message_type, message_content):
+    if message_type == 1:
+        print(message_content)
+        send_message(sock, package_message(2, "I actually don't know what to do for the file list yet lol"))
+    else:
+        send_message(sock, package_message(0, "Message Type Not Recognized"))
+
 
 def accept_incoming_connection(sock):
     conn, addr = sock.accept() #Socket should already be read to read if this fn is called
+    global connections
 
-    print(f"Accepted connection from {addr}")
     conn.setblocking(False)
+    connections += 1
+    
+    newCid = 'conn' + str(connections)
+    print(f"Accepted connection from {addr}, gave cid: {newCid}")
 
     #Buffers will be registered to each socket for incoming and outgoing data to ensure no data is lost from incomplete sends and receives.
     data = types.SimpleNamespace(
+            cid = newCid,
             type = 'client', #Assuming 1 server, server only deals with client connections
 
             incoming_buffer = b'',
@@ -90,27 +110,6 @@ def accept_incoming_connection(sock):
     events = selectors.EVENT_READ | selectors.EVENT_WRITE
 
     sel.register(conn, events, data = data)
-
-
-#This function will send a message of a fixed length to a packet. This function should receive the information of an open socket connection. It should also receive a message in bit format to be sent 
-def send_message(sock, message):
-    """
-    send_message will handle the adding of messages to an outgoing socket buffer. This function will take in a message that should have already been packaged
-    into a bit readable format for the receiver. (call package_message first)
-    """
-    key = sel.get_key(sock)
-    data = key.data
-
-    key.data.outgoing_buffer += message;  
-
-
-#With the decoded message and type passed in, this function should handle the Server's reaction to the message based on the type and content
-def handle_message_reaction(sock, message_type, message_content):
-    if message_type == 1:
-        print(message_content)
-        send_message(sock, package_message(2, "I actually don't know what to do for the file list yet lol"))
-    else:
-        send_message(sock, package_message(0, "Message Type Not Recognized"))
 
 
 def handle_connection(key, mask):
@@ -136,12 +135,10 @@ def handle_connection(key, mask):
             if data.messageLength is not None and len(data.incoming_buffer) >= data.messageLength:
                 message = data.incoming_buffer[:data.messageLength]
 
-                #NEED TO PROCESS MESSAGE HERE (For now just print the processed message)
                 (message_type, message_content) = unpackage_message(message)
                 
                 #Server's reaction to message
                 handle_message_reaction(sock, message_type, message_content)
-
 
                 data.incoming_buffer = data.incoming_buffer[data.messageLength: ] #Clear the message from buffer
                 data.messageLength = None #Reset message length so that we know there's no message currently
@@ -159,18 +156,16 @@ def handle_connection(key, mask):
         data.outgoing_buffer = data.outgoing_buffer[sent: ] #Remove sent part from the buffer
 
 
-while True:
-    try:
+try:
+    while True:
         events = sel.select(timeout = None)
         for key, mask in events:
             if key.data is None:
                 accept_incoming_connection(key.fileobj)
             else:
                 handle_connection(key, mask)
-    except KeyboardInterrupt:
-        print("Caught keyboard interrupt, exiting")
-    except Exception as e:
-        print(f"An error occured")
-
-sel.close()
+except KeyboardInterrupt:
+    print("Caught keyboard interrupt, exiting")
+finally:
+    sel.close()
 
