@@ -4,7 +4,7 @@ import selectors
 import types
 import errno
 import struct
-
+import os
 
 #User input handled on a separate thread from sockets
 import threading
@@ -12,10 +12,66 @@ import queue
 
 HOST = "127.0.0.1"  # The server's hostname or IP address, 127.0.0.1 is localhost 
 PORT = 65432  # The port used by the server
-
+FILEPATH = ""
+CHUNKSIZE = 4096 #Bytes
     
 sel = selectors.DefaultSelector()
 input_queue = queue.Queue() #Queue to handle user requests
+
+
+def initialize_file(file_path, file_size):
+    #Check that file path is not already in use.
+    if os.path.exists(file_path):
+        print(f"There already exists a file at {file_path}. User should check before downloading over.")
+        return
+
+    #otherwise open a new file there in write mode
+    with open(file_path, 'wb') as file:
+        file.seek(file_size - 1)
+        file.write(b'\0') #Setting a null byte at the end will give us a file of the correct size
+    
+    print(f"File of {file_size} bytes has been created at {file_path}")
+
+
+def peek_chunk(file_path, chunk_index, chunk_size = CHUNKSIZE):
+    try:
+        with open(file_path, 'rb') as file:
+            spot = chunk_index * chunk_size
+            file.seek(spot)
+            
+            chunk_content = file.read(chunk_size)
+
+            #Debugging
+            print(f"Peeked chunk {chunk_index} at {file_path}")
+
+            return chunk_content
+
+    except OSError as e:
+        print(f"Error reading chunk {chunk_index} in {file_path}: {e}")
+        return None
+
+def set_chunk(file_path, chunk_index, chunk_content, chunk_size = CHUNKSIZE):
+    try:
+        with open(file_path, 'r+b') as file:
+            spot = chunk_index * chunk_size
+            file.seek(spot)
+            
+            chunk_content = file.write(chunk_content)
+
+            #Debugging
+            print(f"Set chunk {chunk_index} at {file_path}")
+
+            return chunk_content
+
+    except OSError as e:
+        print(f"Error setting chunk {chunk_index} in {file_path}: {e}")
+        return None
+
+#Testing that raeding and writing an entire file works on single system (the current client duh)
+def chunksFunctionsTest():
+    initialize_file("testfile", 4096)
+    set_chunk("testfile", 0 , b"hey dude the empire is pretty cool, maybe you should like, join it or something")
+    print(peek_chunk("testfile", 0))
 
 
 #Function to receive input from the user (e.g. ask server what files are available, ask to download files)
@@ -248,6 +304,7 @@ if __name__ == "__main__":
     #Start connection to Server(Tracker)
     serverSock = open_server_connection()
 
+    chunksFunctionsTest();
 
     msg = package_message(1, "I speak the truth in Christ—I am not lying, my conscience confirms it through the Holy Spirit— 2 I have great sorrow and unceasing anguish in my heart. 3 For I could wish that I myself were cursed and cut off from Christ for the sake of my people, those of my own race, 4 the people of Israel. Theirs is the adoption to sonship; theirs the divine glory, the covenants, the receiving of the law, the temple worship and the promises. 5 Theirs are the patriarchs, and from them is traced the human ancestry of the Messiah, who is God over all, forever praised![a] Amen.")
     send_message(serverSock, msg)
