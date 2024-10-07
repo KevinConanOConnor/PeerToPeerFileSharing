@@ -17,7 +17,20 @@ CHUNKSIZE = 4096 #Bytes
     
 sel = selectors.DefaultSelector()
 input_queue = queue.Queue() #Queue to handle user requests
+###########################################################################################################################################
+# CLIENT SIDE LISTENING SOCKET CODE
+lsock =  socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+lsock.bind((HOST, 0))
+    
+print("Listening on " +  lsock)
+lsock.listen()
 
+lsock.setblocking(False)
+sel.register(lsock, selectors.EVENT_READ, data=types.SimpleNamespace(type = 'lsock'))
+
+
+###########################################################################################################################################
+# CLIENT SIDE LOCAL FILE MODIFICATION CODE
 
 def initialize_file(file_path, file_size):
     #Check that file path is not already in use.
@@ -150,6 +163,9 @@ def open_server_connection(ip = HOST, port_number = PORT, timeout = 5):
 
 #This function should take in an ip and port number and return a TCP socket connection to that IP/Port
 def open_connection(ip, port_number):
+    """
+    open_connection is for connecting to other client on a specified ip and port_number. This function returns the generated socket connection.
+    """
     server_addr = (ip, port_number)
     print(f"Starting Connection to {server_addr}")
 
@@ -175,6 +191,9 @@ def open_connection(ip, port_number):
     return sock
 
 def close_connection(sock):
+    """
+    close_connection takes in an open socket connection, removes from the global Selector sel and closes the socket.
+    """
     sel.unregister(sock)
     sock.close()
 
@@ -223,6 +242,13 @@ def send_message(sock, message):
     
 #With the decoded message and type passed in, this function should handle the Server's reaction to the message based on the type and content
 def handle_message_reaction(sock, message_type, message_content):
+    """
+
+        Arguments:
+            sock: Which connection sent the message (needed to send a return message)
+            message_type: Decoded int representing which code this corresponds to
+            message_content: Decoded content of message
+    """
     if message_type == 1:
         print(message_content)
         send_message(sock, package_message(2, "I actually don't know what to do for the file list yet lol"))
