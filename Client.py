@@ -22,7 +22,7 @@ input_queue = queue.Queue() #Queue to handle user requests
 lsock =  socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 lsock.bind((HOST, 0))
     
-print("Listening on " +  lsock)
+print("Listening on ", lsock)
 lsock.listen()
 
 lsock.setblocking(False)
@@ -260,41 +260,51 @@ def handle_connection(key, mask):
     data = key.data
 
     #print(data)
-    if mask & selectors.EVENT_READ: #Ready to read data
-        received = sock.recv(1024)
+    if data.type == 'lsock':
+        try:
+            #handle accepting connections on the listening socket
+            conn, addr = sock.accept();
+            print(f"Accepted connection from {addr}")
+            conn.setblocking(False)
+            register_socket_selector(conn)
+        except Exception as e:
+            print(f"Problem with accepting connection to peer")
+    else:
+        if mask & selectors.EVENT_READ: #Ready to read data
+            received = sock.recv(1024)
 
-        if received:
-            print(f"Received: {data}")
-            data.incoming_buffer += received
+            if received:
+                print(f"Received: {data}")
+                data.incoming_buffer += received
 
-            #If we don't know the incoming message length yet. We should try to read it
-            if data.messageLength is None and len(data.incoming_buffer) >= 4:
-                #We can extract first 4 bytes as this is the message length prefix
-                data.messageLength = struct.unpack('!I', data.incoming_buffer[:4])[0] #
-                data.incoming_buffer = data.incoming_buffer[4:]
-                print(f"Expected Message Length {data.messageLength} bytes")
+                #If we don't know the incoming message length yet. We should try to read it
+                if data.messageLength is None and len(data.incoming_buffer) >= 4:
+                    #We can extract first 4 bytes as this is the message length prefix
+                    data.messageLength = struct.unpack('!I', data.incoming_buffer[:4])[0] #
+                    data.incoming_buffer = data.incoming_buffer[4:]
+                    print(f"Expected Message Length {data.messageLength} bytes")
 
-            #If we do know the message length, we should process/clear incoming buffer once it has been fully received
-            if data.messageLength is not None and len(data.incoming_buffer) >= data.messageLength:
-                message = data.incoming_buffer[:data.messageLength]
+                #If we do know the message length, we should process/clear incoming buffer once it has been fully received
+                if data.messageLength is not None and len(data.incoming_buffer) >= data.messageLength:
+                    message = data.incoming_buffer[:data.messageLength]
 
-                #NEED TO PROCESS MESSAGE HERE (For now just print the processed message)
-                print(unpackage_message(message))
+                    #NEED TO PROCESS MESSAGE HERE (For now just print the processed message)
+                    print(unpackage_message(message))
 
-                data.incoming_buffer = data.incoming_buffer[data.messageLength: ] #Clear the message from buffer
-                data.messageLength = None #Reset message length so that we know there's no message currently
+                    data.incoming_buffer = data.incoming_buffer[data.messageLength: ] #Clear the message from buffer
+                    data.messageLength = None #Reset message length so that we know there's no message currently
 
 
-            # For demonstration, we immediately echo back the received data
-            #data.outgoing_buffer += received  # Add it to outgoing buffer to echo it back
-        else: #If 0 bytes received, client closed connection
-            print(f"Closing connection to {sock}")
-            sel.unregister(sock)
-            sock.close()
-            
-    if mask & selectors.EVENT_WRITE and data.outgoing_buffer:
-        sent = sock.send(data.outgoing_buffer) #Non-blocking send (Hopefully the message should have already been encoded prior to being put into the buffer)
-        data.outgoing_buffer = data.outgoing_buffer[sent: ] #Remove sent part from the buffer
+                # For demonstration, we immediately echo back the received data
+                #data.outgoing_buffer += received  # Add it to outgoing buffer to echo it back
+            else: #If 0 bytes received, client closed connection
+                print(f"Closing connection to {sock}")
+                sel.unregister(sock)
+                sock.close()
+                
+        if mask & selectors.EVENT_WRITE and data.outgoing_buffer:
+            sent = sock.send(data.outgoing_buffer) #Non-blocking send (Hopefully the message should have already been encoded prior to being put into the buffer)
+            data.outgoing_buffer = data.outgoing_buffer[sent: ] #Remove sent part from the buffer
 
 
 #Main event loop to handle checking sockets and user input
@@ -330,7 +340,7 @@ if __name__ == "__main__":
     #Start connection to Server(Tracker)
     serverSock = open_server_connection()
 
-    chunksFunctionsTest();
+    #chunksFunctionsTest();
 
     msg = package_message(1, "I speak the truth in Christ—I am not lying, my conscience confirms it through the Holy Spirit— 2 I have great sorrow and unceasing anguish in my heart. 3 For I could wish that I myself were cursed and cut off from Christ for the sake of my people, those of my own race, 4 the people of Israel. Theirs is the adoption to sonship; theirs the divine glory, the covenants, the receiving of the law, the temple worship and the promises. 5 Theirs are the patriarchs, and from them is traced the human ancestry of the Messiah, who is God over all, forever praised![a] Amen.")
     send_message(serverSock, msg)
