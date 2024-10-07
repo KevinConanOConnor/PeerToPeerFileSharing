@@ -87,18 +87,6 @@ def chunksFunctionsTest():
     print(peek_chunk("testfile", 0))
 
 
-#Function to receive input from the user (e.g. ask server what files are available, ask to download files)
-def receive_user_input():
-    while True:
-        user_input = input("Enter command:")
-        if user_input:
-            input_queue.put(user_input) #Send input to this queue, when this queue is full it should be handled
-
-#Function to handle/process user input requests
-def handle_user_command(command):
-        print(f"User requested completion of {command}")
-
-
 def register_socket_selector(sock, selector = sel, connection_type = "client"):
     """
     Register socket connection to be handled by a selector
@@ -240,6 +228,17 @@ def send_message(sock, message):
 
     key.data.outgoing_buffer += message;
     
+#Function to receive input from the user (e.g. ask server what files are available, ask to download files)
+def receive_user_input():
+    while True:
+        user_input = input("Enter command:")
+        if user_input:
+            input_queue.put(user_input) #Send input to this queue, when this queue is full it should be handled
+
+#Function to handle/process user input requests
+def handle_user_command(command):
+        print(f"User requested completion of {command}")
+
 #With the decoded message and type passed in, this function should handle the Server's reaction to the message based on the type and content
 def handle_message_reaction(sock, message_type, message_content):
     """
@@ -249,11 +248,31 @@ def handle_message_reaction(sock, message_type, message_content):
             message_type: Decoded int representing which code this corresponds to
             message_content: Decoded content of message
     """
-    if message_type == 1:
+
+    #File Registration Reply from Server
+    if message_type == 2:
         print(message_content)
-        send_message(sock, package_message(2, "I actually don't know what to do for the file list yet lol"))
+        send_message(sock, package_message(2, f"I actually don't know what to do for the file list yet lol"))
+
+    #Chunk Registration Reply
+    if message_type == 4:
+        print("placeholder")
+
+    #File List Reply from Server
+    elif message_type == 102:
+        send_message(sock, package_message(0, f"Message Type Not Recognized"))
+
+    #File Location Reply from Server
+    elif message_type == 104:
+        print(f"placeholder")
+
+    #Received chunk from other client
+    elif message_type == 106:
+        print(f"placeholder")
+    
     else:
-        send_message(sock, package_message(0, "Message Type Not Recognized"))
+        print(f"Unknown message Type received: {message_type}: {message_content} ", )
+
 
 def handle_connection(key, mask):
     sock = key.fileobj

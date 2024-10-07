@@ -79,9 +79,23 @@ def send_message(sock, message):
 
 #With the decoded message and type passed in, this function should handle the Server's reaction to the message based on the type and content
 def handle_message_reaction(sock, message_type, message_content):
+    #File Registration Request from Client
     if message_type == 1:
         print(message_content)
         send_message(sock, package_message(2, "I actually don't know what to do for the file list yet lol"))
+
+    #Chunk Registration Request from Client
+    elif message_type == 3:
+        print("placeholder")
+        
+    #File List Request from Client
+    elif message_type == 101:
+        print(message_content)
+
+    #File Location Request from Client
+    elif message_type == 103:
+        print("placeholder")
+
     else:
         send_message(sock, package_message(0, "Message Type Not Recognized"))
 
