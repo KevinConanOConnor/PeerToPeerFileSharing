@@ -82,7 +82,7 @@ def handle_message_reaction(sock, message_type, message_content):
     #File Registration Request from Client
     if message_type == 1:
         print(message_content)
-        send_message(sock, package_message(2, "I actually don't know what to do for the file list yet lol"))
+        send_message(sock, package_message(2, "File Registration Request Accepted"))
 
     #Chunk Registration Request from Client
     elif message_type == 3:

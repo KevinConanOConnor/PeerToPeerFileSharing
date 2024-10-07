@@ -14,6 +14,13 @@ HOST = "127.0.0.1"  # The server's hostname or IP address, 127.0.0.1 is localhos
 PORT = 65432  # The port used by the server
 FILEPATH = ""
 CHUNKSIZE = 4096 #Bytes
+
+dir = os.path.dirname(os.path.abspath(__file__))
+
+#print(f'Current Directory:')
+#print(dir)
+FILEPATH = os.path.join(dir, 'files') #For where to share files from and download shared files to
+#print(FILEPATH)
     
 sel = selectors.DefaultSelector()
 input_queue = queue.Queue() #Queue to handle user requests
@@ -31,6 +38,17 @@ sel.register(lsock, selectors.EVENT_READ, data=types.SimpleNamespace(type = 'lso
 
 ###########################################################################################################################################
 # CLIENT SIDE LOCAL FILE MODIFICATION CODE
+def get_files_in_directory(directory = FILEPATH):
+    try:
+        with os.scandir(directory) as files:
+            for file in files: # Print the name of all files in the directory
+                if file.is_file():
+                    print(file.name)
+
+    except Exception as e:
+        print(f"Error accessing directory: {directory}")
+        print(f"{e}")
+
 
 def initialize_file(file_path, file_size):
     #Check that file path is not already in use.
@@ -231,13 +249,47 @@ def send_message(sock, message):
 #Function to receive input from the user (e.g. ask server what files are available, ask to download files)
 def receive_user_input():
     while True:
+        print(f"")
+        print(f"Files that you can share:")
+        get_files_in_directory()
+
+        print(f"")
+        print(f"Possible commands:")
+        print(f"1 - Request File List from Server FORMAT: 1")
+        print(f"2 - Register File with Server. FORMAT: Register filename.txt")
+        print(f"3 - Initiate Download of File from Server FORMAT: Download filename.txt (from list given by server)")
+        print(f"")
+
         user_input = input("Enter command:")
         if user_input:
             input_queue.put(user_input) #Send input to this queue, when this queue is full it should be handled
 
+
 #Function to handle/process user input requests
 def handle_user_command(command):
         print(f"User requested completion of {command}")
+        words = command.strip().split()
+
+        if len(words) == 0:
+            print(f"No command entered.")
+            return
+    
+        action = words[0].lower()
+
+        if action == "1":
+            print(f"Requesting File List from Server:")
+
+        elif len(words) != 2:
+            print(f"Command Not In Correct Format")
+        
+        elif action ==  "register":
+            print(f"Attempting to register file {words[1]} with server")
+
+        elif action == "download":
+            (f"Attempting to download file {words[1]} from system")
+
+
+        
 
 #With the decoded message and type passed in, this function should handle the Server's reaction to the message based on the type and content
 def handle_message_reaction(sock, message_type, message_content):
