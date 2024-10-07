@@ -5,6 +5,7 @@ import types
 import errno
 import struct
 import os
+import hashlib
 
 #User input handled on a separate thread from sockets
 import threading
@@ -25,6 +26,32 @@ FILEPATH = os.path.join(dir, 'files') #For where to share files from and downloa
 sel = selectors.DefaultSelector()
 input_queue = queue.Queue() #Queue to handle user requests
 ###########################################################################################################################################
+#HASHING CODE
+
+def calc_file_hash(file_path):
+    hash_sha256 = hashlib.sha256()
+
+    try:
+        with open(file_path, "rb") as file:
+            while chunk := file.read(4096):
+                hash_sha256.update(chunk)
+    except Exception as e:
+        print(f"Error hashing file at {file_path}")
+        return
+    return hash_sha256.hexdigest()
+
+
+def calc_chunk_hash(chunk):
+    hash_sha256 = hashlib.sha256()
+    try:
+        hash_sha256.update(chunk)
+    except Exception as e:
+        print(f"Error hashing chunk: {chunk}")
+        return
+    return hash_sha256.hexdigest()
+        
+
+###########################################################################################################################################
 # CLIENT SIDE LISTENING SOCKET CODE
 lsock =  socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 lsock.bind((HOST, 0))
@@ -38,6 +65,13 @@ sel.register(lsock, selectors.EVENT_READ, data=types.SimpleNamespace(type = 'lso
 
 ###########################################################################################################################################
 # CLIENT SIDE LOCAL FILE MODIFICATION CODE
+def adjust_for_storage_directory(fileName, path = FILEPATH):
+    """
+    Code for adjusting fileName's to include the filepath of our storage directory since I will need to reuse this a lot.
+    """
+    return os.path.join(FILEPATH, fileName)
+
+
 def get_files_in_directory(directory = FILEPATH):
     try:
         with os.scandir(directory) as files:
@@ -263,6 +297,26 @@ def receive_user_input():
         user_input = input("Enter command:")
         if user_input:
             input_queue.put(user_input) #Send input to this queue, when this queue is full it should be handled
+
+def register_file(file_name):
+    actualPath = adjust_for_storage_directory(file_name)
+
+
+    if not os.path.exists(file_name):
+        print(f"The file {file_name} is not present in your files directory")
+        return
+    
+    #DEFINE File Registration Message Sizes so that sender knows how many bytes each string will be
+    FILENAME_SIZE = 50
+    HASH_SIZE = 64
+
+
+    filesize = os.path.getsize(FILEPATH)
+
+
+    #Calculate Chunk Size
+    
+    print('blah')
 
 
 #Function to handle/process user input requests
