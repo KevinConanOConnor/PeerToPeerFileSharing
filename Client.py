@@ -356,15 +356,18 @@ def handle_user_command(command):
         outgoing_message["type"] = "FILELISTREQ"
         send_message_json(server_sock, outgoing_message)
 
-
     elif len(words) != 2:
         print(f"Command Not In Correct Format")
     
     elif action ==  "register":
         print(f"Attempting to register file {words[1]} with server")
         outgoing_message["type"] = "FILEREG"
-        outgoing_message["content"] = {words[1]}
-        outgoing_message["chunk_count"] = calc_number_of_chunks({words[1]})
+        outgoing_message["content"] = words[1]
+
+        #Add local filepath to words to filename
+        file_path = adjust_for_storage_directory(words[1])
+
+        outgoing_message["chunk_count"] = calc_number_of_chunks(file_path)
         send_message_json(server_sock, outgoing_message)
         
 
@@ -394,6 +397,10 @@ def handle_message_reaction(sock, message):
 
     #File Registration Reply from Server. No outgoing message neccessary.
     if message_type == "FILEREGREPLY":
+        if message_content["success"] == True:
+            print(f"{message_content["filename"]} was registered successfully with the server")
+        else:
+            print(f"{message_content["filename"]} was not able to be registered with the server. Mayhaps it was already registered?")
         return
 
     #Chunk Registration Reply. No outgoing message neccessary.

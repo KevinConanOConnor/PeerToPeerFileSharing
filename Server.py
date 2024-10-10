@@ -60,7 +60,7 @@ def unpack_json_message(received_message):
     return json.loads(json_message)
 
 #With the decoded message and type passed in, this function should handle the Server's reaction to the message based on the type and content
-def handle_message_reaction(sock, message):
+def handle_message_reaction(sock, data, message):
     """
 
         Arguments:
@@ -68,6 +68,9 @@ def handle_message_reaction(sock, message):
             message_type: Decoded int representing what type of message we are reacting to
             message_content: Decoded content of message we are reacting to
     """
+    #Need to get cid
+    cid = data.cid
+
     message_type = message["type"]
     message_content = message["content"]
 
@@ -80,6 +83,33 @@ def handle_message_reaction(sock, message):
     if message_type == "FILEREG":
         filename = message_content;
         chunk_count = message["chunk_count"]
+
+        registration_success = True
+
+        #Check if file of same name already registered
+        if filename in file_list:
+            print(f"File '{filename}' is already registered.")
+            registration_success = False
+
+        # Register the file by adding it to the server's file list
+        else:
+            file_list[filename] = {
+                "chunkCount": chunk_count,
+                "users": {
+                    cid: {"chunks": set(range(chunk_count))}
+                }
+            }
+            print(f"File '{filename}' registered with {chunk_count} chunks by user {cid}.")
+        
+        
+        # Send a registration reply back to the client
+        outgoing_message["type"] = "FILEREGREPLY"
+        outgoing_message["content"] = {
+            "success": registration_success,
+            "filename": filename
+        }
+
+        send_message_json(sock, outgoing_message)
 
         return
 
@@ -155,7 +185,7 @@ def handle_connection(key, mask):
                 print(message)
                 
                 #Server's reaction to message
-                handle_message_reaction(sock, message)
+                handle_message_reaction(sock, data, message)
 
                 data.incoming_buffer = data.incoming_buffer[data.messageLength: ] #Clear the message from buffer
                 data.messageLength = None #Reset message length so that we know there's no message currently
