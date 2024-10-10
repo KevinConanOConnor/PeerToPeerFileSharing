@@ -7,6 +7,7 @@ import struct
 import os
 import hashlib
 import json
+import math
 
 #User input handled on a separate thread from sockets
 import threading
@@ -131,6 +132,21 @@ def set_chunk(file_path, chunk_index, chunk_content, chunk_size = CHUNKSIZE):
 
     except OSError as e:
         print(f"Error setting chunk {chunk_index} in {file_path}: {e}")
+        return None
+
+
+def calc_number_of_chunks(file_path, chunk_size = CHUNKSIZE):
+    if not os.path.exists(file_path):
+        print(f"There does not exist a file at {file_path}.")
+        return
+    try:
+        file_size = os.path.getsize(file_path)
+        number_of_chunks = math.ceil(file_size / chunk_size)
+        return number_of_chunks
+
+
+    except Exception as e:
+        print(f"Problem calculating chunk count for {file_path}: {e}")
         return None
 
 #Testing that raeding and writing an entire file works on single system (the current client duh)
@@ -299,36 +315,67 @@ def register_file(file_name):
     
     print('blah')
 
+def debug_selector_map():
+    # Iterate over the registered sockets in the selector
+    for key, value in sel.get_map().items():
+        print(f"File Object (key): {key}, SelectorKey (value): {value}, Data: {value.data}")
+
+def get_server_socket():
+    # Iterate over registered sockets in the selector
+    for key, value in sel.get_map().items():
+        #print(f"File Object (key): {key}, SelectorKey (value): {value}, Data: {value.data}")
+        # Check if the registered data marks this as the server socket
+        if isinstance(value.data, types.SimpleNamespace) and value.data.type == "server":
+            return key  # Return the LITERALY server socket (key.fileobj) NOT THE SELECTORKEY
+    print("Server socket not found.")
+    return None
+
 
 #Function to handle/process user input requests
 def handle_user_command(command):
-        print(f"User requested completion of {command}")
-        words = command.strip().split()
 
-        if len(words) == 0:
-            print(f"No command entered.")
-            return
+    server_sock = get_server_socket()
+
+    outgoing_message = {
+    "type": "",
+    "content":"",
+    }
+
+    print(f"User requested completion of {command}")
+    words = command.strip().split()
+
+
+    if len(words) == 0:
+        print(f"No command entered.")
+        return
+
+    action = words[0].lower()
+
+    if action == "1":
+        print(f"Requesting File List from Server:")
+        outgoing_message["type"] = "FILELISTREQ"
+        send_message_json(server_sock, outgoing_message)
+
+
+    elif len(words) != 2:
+        print(f"Command Not In Correct Format")
     
-        action = words[0].lower()
-
-        if action == "1":
-            print(f"Requesting File List from Server:")
-
-        elif len(words) != 2:
-            print(f"Command Not In Correct Format")
+    elif action ==  "register":
+        print(f"Attempting to register file {words[1]} with server")
+        outgoing_message["type"] = "FILEREG"
+        outgoing_message["content"] = {words[1]}
+        outgoing_message["chunk_count"] = calc_number_of_chunks({words[1]})
+        send_message_json(server_sock, outgoing_message)
         
-        elif action ==  "register":
-            print(f"Attempting to register file {words[1]} with server")
-            
 
-        elif action == "download":
-            (f"Attempting to download file {words[1]} from system")
+    elif action == "download":
+        (f"Attempting to download file {words[1]} from system")
 
 
         
 
 #With the decoded message and type passed in, this function should handle the Server's reaction to the message based on the type and content
-def handle_message_reaction(sock, message_type, message_content):
+def handle_message_reaction(sock, message):
     """
 
         Arguments:
@@ -336,6 +383,9 @@ def handle_message_reaction(sock, message_type, message_content):
             message_type: Decoded int representing what type of message we are reacting to
             message_content: Decoded content of message we are reacting to
     """
+    message_type = message["type"]
+    message_content = message["content"]
+
 
     outgoing_message = {
         "type": "",
@@ -352,6 +402,9 @@ def handle_message_reaction(sock, message_type, message_content):
     
     #File List Reply from Server. No outgoing message neccessary.
     elif message_type == "FILELISTREPLY":
+        print(f"File List Received From Server:")
+        for each in message_content:
+            print(each)
         return
     
     #File Location Reply from Server No outgoing message neccessary.
@@ -411,7 +464,7 @@ def handle_connection(key, mask):
                     #NEED TO PROCESS MESSAGE HERE (For now just print the processed message)
                     print(message)
 
-                    handle_message_reaction(sock, message["type"], message["content"])
+                    handle_message_reaction(sock, message)
 
                     data.incoming_buffer = data.incoming_buffer[data.messageLength: ] #Clear the message from buffer
                     data.messageLength = None #Reset message length so that we know there's no message currently

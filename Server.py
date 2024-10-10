@@ -14,7 +14,7 @@ PORT = 65432  # Port to listen on (non-privileged ports are > 1023)
 
 #Use Dictionaries to store which files we have, which users have that file, and which chunks each file has.
 file_list = {
-    "file1": #Format for example
+    "Thisisntarealfileitsjustforshowpleasedontrequestit.txt": #Format for example
     {
         "hash": "931231923etc.", #Hashcode to differentiate that files with different names are actually same file
         "chunkCount": "", #Count of Chunks in file to make sure peers can't register the presence of non existing chunks
@@ -42,7 +42,7 @@ def send_message_json(sock, message_json):
     """
     Adds a length header to the inputted JSON message and packages that message into bytes to be sent. Proceeds to add the message to the socket which it will be sent through's buffer
     """
-    json_message = json.dumps(message_dict)
+    json_message = json.dumps(message_json)
     json_message_byte_encoded = json_message.encode('utf-8')
     message_length = len(json_message_byte_encoded)
     header = struct.pack('!I', message_length)
@@ -60,7 +60,7 @@ def unpack_json_message(received_message):
     return json.loads(json_message)
 
 #With the decoded message and type passed in, this function should handle the Server's reaction to the message based on the type and content
-def handle_message_reaction(sock, message_type, message_content):
+def handle_message_reaction(sock, message):
     """
 
         Arguments:
@@ -68,6 +68,8 @@ def handle_message_reaction(sock, message_type, message_content):
             message_type: Decoded int representing what type of message we are reacting to
             message_content: Decoded content of message we are reacting to
     """
+    message_type = message["type"]
+    message_content = message["content"]
 
     outgoing_message = {
         "type": "",
@@ -76,6 +78,9 @@ def handle_message_reaction(sock, message_type, message_content):
 
     #File Registration from Client. Outgoing Message Neccessary.
     if message_type == "FILEREG":
+        filename = message_content;
+        chunk_count = message["chunk_count"]
+
         return
 
     #Chunk Registration from Client. Outgoing Message Neccessary.
@@ -84,6 +89,10 @@ def handle_message_reaction(sock, message_type, message_content):
     
     #File List Request from Client. Outgoing Message Neccessary.
     elif message_type == "FILELISTREQ":
+        outgoing_message["type"] = "FILELISTREPLY"
+        outgoing_message["content"] = list(file_list.keys())
+
+        send_message_json(sock, outgoing_message)
         return
     
     #File Location Request from Server Outgoing Message Neccessary.
@@ -146,7 +155,7 @@ def handle_connection(key, mask):
                 print(message)
                 
                 #Server's reaction to message
-                handle_message_reaction(sock, message["type"], message["content"])
+                handle_message_reaction(sock, message)
 
                 data.incoming_buffer = data.incoming_buffer[data.messageLength: ] #Clear the message from buffer
                 data.messageLength = None #Reset message length so that we know there's no message currently
