@@ -3,6 +3,7 @@ import threading
 import selectors
 import types
 import struct
+import json
 
 sel = selectors.DefaultSelector()
 
@@ -36,69 +37,61 @@ lsock.listen()
 lsock.setblocking(False)
 sel.register(lsock, selectors.EVENT_READ, data=None)
 
-def package_message(message_type, message_content):
-    """
-    package_message will handle the packaging of messages into a format receivable by clients and peers in our system. Returns a message encoded into bytes.
-    """
-    content_bytes = message_content.encode('utf-8')
 
-    #The length of the message is 4 for type header (int) + content bytes
-    message_length = 4 + len(content_bytes)
-    #Pack message length as (4 bytes int) and message type as 4 bytes int, all in network byte order (!)
-    header = struct.pack('!I I', message_length, message_type)
-
-    finalMessage = header + content_bytes
-    return finalMessage
-
-def unpackage_message(message):
+def send_message_json(sock, message_json):
     """
-    Unpackage message will handle the unpacking of messages received. 
-        Arguments:
-            message: message data in bytes form, should still contain header data without the length (, 4 bytes type)
-        
+    Adds a length header to the inputted JSON message and packages that message into bytes to be sent. Proceeds to add the message to the socket which it will be sent through's buffer
     """
+    json_message = json.dumps(message_dict)
+    json_message_byte_encoded = json_message.encode('utf-8')
+    message_length = len(json_message_byte_encoded)
+    header = struct.pack('!I', message_length)
 
-    #Unpack the type, will handle types of messages and different formats of contents later
-    message_type = struct.unpack('!I', message[:4])[0]
+    finalMessage = header + json_message_byte_encoded;
 
-    message_content = message[4:].decode('utf-8')
-
-    return (message_type, message_content)
-    
-#This function will send a message of a fixed length to a packet. This function should receive the information of an open socket connection. It should also receive a message in bit format to be sent 
-def send_message(sock, message):
-    """
-    send_message will handle the adding of messages to an outgoing socket buffer. This function will take in a message that should have already been packaged
-    into a bit readable format for the receiver. (call package_message first)
-    """
     key = sel.get_key(sock)
     data = key.data
+    key.data.outgoing_buffer += finalMessage;
 
-    key.data.outgoing_buffer += message;
 
+def unpack_json_message(received_message):
+    json_message = received_message.decode('utf-8')
+
+    return json.loads(json_message)
 
 #With the decoded message and type passed in, this function should handle the Server's reaction to the message based on the type and content
 def handle_message_reaction(sock, message_type, message_content):
-    #File Registration Request from Client
-    if message_type == 1:
-        print(message_content)
-        send_message(sock, package_message(2, "File Registration Request Accepted"))
+    """
 
-    #Chunk Registration Request from Client
-    elif message_type == 3:
-        print("placeholder")
-        
-    #File List Request from Client
-    elif message_type == 101:
-        print(message_content)
+        Arguments:
+            sock: Which connection sent the message (needed to send a return message)
+            message_type: Decoded int representing what type of message we are reacting to
+            message_content: Decoded content of message we are reacting to
+    """
 
-    #File Location Request from Client
-    elif message_type == 103:
-        print("placeholder")
+    outgoing_message = {
+        "type": "",
+        "content": ""
+    }
 
+    #File Registration from Client. Outgoing Message Neccessary.
+    if message_type == "FILEREG":
+        return
+
+    #Chunk Registration from Client. Outgoing Message Neccessary.
+    if message_type == "CHUNKREG":
+        return
+    
+    #File List Request from Client. Outgoing Message Neccessary.
+    elif message_type == "FILELISTREQ":
+        return
+    
+    #File Location Request from Server Outgoing Message Neccessary.
+    elif message_type == "FILELOCREQ":
+        return
+    
     else:
-        send_message(sock, package_message(0, "Message Type Not Recognized"))
-
+        print(f"Unknown message Type received: {message_type}: {message_content} ", )
 
 def accept_incoming_connection(sock):
     conn, addr = sock.accept() #Socket should already be read to read if this fn is called
@@ -149,10 +142,11 @@ def handle_connection(key, mask):
             if data.messageLength is not None and len(data.incoming_buffer) >= data.messageLength:
                 message = data.incoming_buffer[:data.messageLength]
 
-                (message_type, message_content) = unpackage_message(message)
+                message = unpack_json_message(message)
+                print(message)
                 
                 #Server's reaction to message
-                handle_message_reaction(sock, message_type, message_content)
+                handle_message_reaction(sock, message["type"], message["content"])
 
                 data.incoming_buffer = data.incoming_buffer[data.messageLength: ] #Clear the message from buffer
                 data.messageLength = None #Reset message length so that we know there's no message currently
