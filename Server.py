@@ -16,8 +16,7 @@ PORT = 65432  # Port to listen on (non-privileged ports are > 1023)
 file_list = {
     "Thisisntarealfileitsjustforshowpleasedontrequestit.txt": #Format for example
     {
-        "hash": "931231923etc.", #Hashcode to differentiate that files with different names are actually same file
-        "chunkCount": "", #Count of Chunks in file to make sure peers can't register the presence of non existing chunks
+        "chunkCount": 0, #Count of Chunks in file to make sure peers can't register the presence of non existing chunks
         #List of users with parts of the file, "Key here will be a cid string assigned when a connection is established"
         "users":
         {
@@ -126,8 +125,54 @@ def handle_message_reaction(sock, data, message):
         return
     
     #File Location Request from Server Outgoing Message Neccessary.
-    elif message_type == "FILELOCREQ":
-        return
+    if message_type == "FILELOCREQ":
+        filename = message_content
+        outgoing_message["type"] = "FILELOCREPLY"
+
+        if filename in file_list:
+            # Get the list of users who have pieces of this file
+            file_entry = file_list[filename]
+
+            # Create a new list to contain users and their chunks
+            sharers = []
+            cids_to_remove = []
+
+            # For each user (cid) who has chunks of this file, we need to find their socket address to pass on to client so they can open a connection
+            # Should also take this opportunity to clear any cids which do not appear on our selectory (peers who have left) from the list.
+            # Additionally, if we realize there are no peers left with the file. We should probably let the client know and delete the file from the server
+            for user_cid, set_of_chunks in file_entry["users"].items(): #items should return a couple consisting of a cid and a set of the cunks they have
+                user_addr = None
+
+                #Try to find the address corresponding to the relevant cid
+                for key, value in sel.get_map().items():
+                    if value.data is not None:
+                        if value.data.cid == cid:
+                            user_addr = value.fileobj.getpeername()
+
+                #If an address if found for the cid, we should add their chunk information. Otherwise we should remove the cid the file list.
+                if user_addr is not None:
+                    sharers.append({
+                        "address": user_addr,  # (IP, port) tuple
+                        "chunks": list(set_of_chunks['chunks'])  # Get the list of hcunks held and convert set to list for JSON serialization
+                    })
+
+                else:
+                    print(f"User {user_cid} not found in selector, marking for removal from {filename}'s list of owners")
+                    cids_to_remove.append(user_cid)
+
+            # Remove disconnected users from file_list
+            for user_cid in cids_to_remove:
+                del file_entry["users"][user_cid]
+
+            outgoing_message["content"] = {
+                "filename": filename,
+                "users": sharers  # List of users and the chunks they have
+            }
+        else:  # Handle case where file wasn't found
+            outgoing_message["content"] = f"File '{filename}' not found."
+
+        send_message_json(sock, outgoing_message)
+
     
     else:
         print(f"Unknown message Type received: {message_type}: {message_content} ", )

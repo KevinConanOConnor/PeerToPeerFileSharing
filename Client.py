@@ -373,6 +373,10 @@ def handle_user_command(command):
 
     elif action == "download":
         (f"Attempting to download file {words[1]} from system")
+        outgoing_message["type"] = "FILELOCREQ"
+        outgoing_message["content"] = words[1]
+
+        send_message_json(server_sock, outgoing_message)
 
 
         
@@ -415,7 +419,12 @@ def handle_message_reaction(sock, message):
         return
     
     #File Location Reply from Server No outgoing message neccessary.
-    elif message_type == "SENDCHUNK":
+    elif message_type == "FILELOCREPLY":
+        
+
+        #Connect to peers and initiate downloading from them
+
+        #print(message)
         return
     
     #Received chunk from other client. No outgoing message neccessary.
