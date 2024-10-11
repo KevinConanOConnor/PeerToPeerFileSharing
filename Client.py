@@ -420,7 +420,17 @@ def handle_message_reaction(sock, message):
     
     #File Location Reply from Server No outgoing message neccessary.
     elif message_type == "FILELOCREPLY":
-        
+        filename = message_content['filename']
+
+        print(f"Owners of {filename} have been received. Initiating connections.")
+        connections_to_make = message_content['users']
+
+        for connection in connections_to_make:
+            address = connection['address'][0]
+            port = connection['address'][1]
+            open_connection(address, port)
+
+
 
         #Connect to peers and initiate downloading from them
 
