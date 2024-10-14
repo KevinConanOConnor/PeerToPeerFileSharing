@@ -181,8 +181,6 @@ def register_socket_selector(sock, selector = sel, connection_type = "client"):
     Returns: N/A
     """
     events = selectors.EVENT_READ | selectors.EVENT_WRITE
-
-    data
         
     #Store extra state data for client connections (File + which chunks are available over this connection)
     if connection_type == 'client':
@@ -198,6 +196,7 @@ def register_socket_selector(sock, selector = sel, connection_type = "client"):
                 peer_chunks = set(),
                 ongoing_chunk_request = None, #Keep track of what chunk should be requested on this connection
             )
+        sel.register(sock, events, data = data)
         
     else:
         data = types.SimpleNamespace(
@@ -208,9 +207,10 @@ def register_socket_selector(sock, selector = sel, connection_type = "client"):
 
                 outgoing_buffer =  b'',
             )
+        sel.register(sock, events, data = data)
 
     
-    sel.register(sock, events, data = data)
+    
 
 
 def open_server_connection(ip = HOST, port_number = PORT, timeout = 5):
@@ -245,7 +245,7 @@ def open_server_connection(ip = HOST, port_number = PORT, timeout = 5):
         return sock
 
     except Exception as e:
-        print(f"Error Occured trying to establish connection to main server")
+        print(f"Error Occured trying to establish connection to main server: {e}")
 
 
 #This function should take in an ip and port number and return a TCP socket connection to that IP/Port
@@ -253,23 +253,23 @@ def open_connection(ip, port_number):
     """
     open_connection is for connecting to other client on a specified ip and port_number. This function returns the generated socket connection.
     """
-    server_addr = (ip, port_number)
-    print(f"Starting Connection to {server_addr}")
+    client_addr = (ip, port_number)
+    print(f"Starting Connection to {client_addr}")
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setblocking(False)
 
     #Attempt to connect
-    result = sock.connect_ex(server_addr)
+    result = sock.connect_ex(client_addr)
 
     if result == 0:
-        print(f"Connection to {server_addr} successful immediately")
+        print(f"Connection to {client_addr} successful immediately")
 
     elif result == errno.EINPROGRESS or result == errno.EWOULDBLOCK:
-        print(f"Connection to {server_addr} in progress")
+        print(f"Connection to {client_addr} in progress")
 
     else:
-        print(f"Error connecting to {server_addr}")
+        print(f"Error connecting to {client_addr}")
         sock.close()
         return None
 
@@ -351,12 +351,14 @@ def debug_selector_map():
         print(f"File Object (key): {key}, SelectorKey (value): {value}, Data: {value.data}")
 
 def get_server_socket():
+    """
+    """
     # Iterate over registered sockets in the selector
     for key, value in sel.get_map().items():
         #print(f"File Object (key): {key}, SelectorKey (value): {value}, Data: {value.data}")
         # Check if the registered data marks this as the server socket
         if isinstance(value.data, types.SimpleNamespace) and value.data.type == "server":
-            return key  # Return the LITERALY server socket (key.fileobj) NOT THE SELECTORKEY
+            return key  # Return the LITERAL server socket (key.fileobj) NOT THE SELECTORKEY
     print("Server socket not found.")
     return None
 
@@ -434,8 +436,6 @@ def send_chunk(sock, filename, chunk_index):
     chunk_content = peek_chunk(path,chunk_index)
     hash = calc_chunk_hash(chunk_content)
 
-    message
-
     if chunk_content:
         message = {
             "type": "CHUNKSEND",
@@ -447,13 +447,15 @@ def send_chunk(sock, filename, chunk_index):
                 "hash": hash,
             }
         }
+        send_message_json(sock, message)
     else:
         message = {
             "type": "ERROR",
             "content": f"Chunk {chunk_index} of '{filename}' not found on this client."
         }
+        send_message_json(sock, message)
 
-    send_message_json(sock, message)
+    
         
 
 #With the decoded message and type passed in, this function should handle the Server's reaction to the message based on the type and content
@@ -477,9 +479,9 @@ def handle_message_reaction(sock, message, data):
     #File Registration Reply from Server. No outgoing message neccessary.
     if message_type == "FILEREGREPLY":
         if message_content["success"] == True:
-            print(f"{message_content["filename"]} was registered successfully with the server")
+            print(f"{message_content['filename']} was registered successfully with the server")
         else:
-            print(f"{message_content["filename"]} was not able to be registered with the server. Mayhaps it was already registered?")
+            print(f"{message_content['filename']} was not able to be registered with the server. Mayhaps it was already registered?")
         return
 
     #Chunk Registration Reply. No outgoing message neccessary.
@@ -499,12 +501,22 @@ def handle_message_reaction(sock, message, data):
         total_chunks = message_content["chunkCount"]
 
         print(f"Owners of {filename} have been received. Initiating connections.")
-        connections_to_make = message_content['users']
+        users_to_connect_to = message_content['users']
 
-        for connection in connections_to_make:
-            address = connection['address'][0]
-            port = connection['address'][1]
+        for user in users_to_connect_to:
+            address = user['address'][0]
+            port = user['address'][1]
             new_connection = open_connection(address, port)
+            #Initialize connection's state data
+            if new_connection:
+                try:
+                    peer_data = sel.get_key(new_connection).data
+                    peer_data.filename = filename
+                    peer_data.peer_chunks = set(user['chunks'])
+                    print(f"Set filename and peer_chunks for connection {new_connection.getpeername()}.")
+
+                except Exception as e:
+                    print(f"Error setting peer data for {new_connection}: {e}")
 
         if filename not in downloads:
             downloads[filename] = {
@@ -512,6 +524,7 @@ def handle_message_reaction(sock, message, data):
                 "received_chunks": set(),
                 "missing_chunks": set(range(total_chunks)),
             }
+
         #now that connections are open, requesting and handling requests will be done in event loop.
         return
     
@@ -555,12 +568,6 @@ def handle_message_reaction(sock, message, data):
 
         return
     
-    #RECEIVED CHUNK REQUEST FROM OTHER CLIENT. REPLY NECCESSARY
-    elif message_type == "CHUNKREQ":
-        outgoing_message["type"] = "CHUNKSEND"
-        
-        send_message_json(outgoing_message)
-    
     else:
         print(f"Unknown message Type received: {message_type}: {message_content} ", )
 
@@ -581,7 +588,7 @@ def handle_connection(key, mask):
             print(f"Problem with accepting connection to peer")
     else:
         if mask & selectors.EVENT_READ: #Ready to read data
-            received = sock.recv(1024)
+            received = sock.recv(8192)
 
             if received:
                 print(f"Received: {data}")
@@ -627,7 +634,9 @@ def handle_connection(key, mask):
                             options = downloads[data.filename]["missing_chunks"] & data.peer_chunks
                             if options:
                                 next_chunk = options.pop()
+                                data.ongoing_chunk_request = next_chunk
                                 send_chunk_request(sock, data.filename, next_chunk)
+                                
                                 
 
 
