@@ -8,6 +8,7 @@ import os
 import hashlib
 import json
 import math
+import random
 
 #User input handled on a separate thread from sockets
 import threading
@@ -139,7 +140,7 @@ def set_chunk(file_path, chunk_index, chunk_content, chunk_size = CHUNKSIZE):
             chunk_content = file.write(chunk_content)
 
             #Debugging
-            print(f"Set chunk {chunk_index} at {file_path}")
+            #print(f"Set chunk {chunk_index} at {file_path}")
 
             return chunk_content
 
@@ -154,9 +155,9 @@ def calc_number_of_chunks(file_path, chunk_size = CHUNKSIZE):
         return
     try:
         file_size = os.path.getsize(file_path)
-        print(file_size)
+        #print(file_size)
         number_of_chunks = math.ceil(file_size / chunk_size)
-        print(number_of_chunks)
+        #print(number_of_chunks)
         return (file_size, number_of_chunks)
 
 
@@ -319,7 +320,9 @@ def receive_user_input():
         print(f"Possible commands:")
         print(f"1 - Request File List from Server FORMAT: 1")
         print(f"2 - Register File with Server. FORMAT: Register filename.txt")
-        print(f"3 - Initiate Download of File from Server FORMAT: Download filename.txt (from list given by server)")
+        print(f"3 - Register Directory of files with server. FORMAT: DirectoryRegister folder")
+        print(f"4 - Initiate Download of File from Server FORMAT: Download filename.txt (from list given by server)")
+        print(f"5 - Check Progress of Downloads. FORMAT: progress")
         print(f"")
 
         user_input = input("Enter command:")
@@ -375,7 +378,7 @@ def handle_user_command(command):
     "content":"",
     }
 
-    print(f"User requested completion of {command}")
+    #print(f"User requested completion of {command}")
     words = command.strip().split()
 
 
@@ -389,6 +392,13 @@ def handle_user_command(command):
         print(f"Requesting File List from Server:")
         outgoing_message["type"] = "FILELISTREQ"
         send_message_json(server_sock, outgoing_message)
+
+    elif action == "progress":
+        for file_name, file_data in downloads.items():
+            total_chunks = file_data["chunk_count"]
+            received_chunks = len(file_data["received_chunks"])
+            percentage = (received_chunks / total_chunks) * 100
+            print(f"File: {file_name} - Progress: {received_chunks}/{total_chunks} chunks ({percentage:.2f}%)")
 
     elif len(words) != 2:
         print(f"Command Not In Correct Format")
@@ -421,6 +431,7 @@ def handle_user_command(command):
         send_message_json(server_sock, outgoing_message)
 
 
+
 def send_chunk_request(sock, filename, chunk_index):
     """
     send a chunk request to a peer
@@ -434,7 +445,7 @@ def send_chunk_request(sock, filename, chunk_index):
         }
     }
     send_message_json(sock, message)
-    print(f"Requested chunk {chunk_index} from peer {sock.getpeername()}.")
+    #print(f"Requested chunk {chunk_index} from peer {sock.getpeername()}.")
 
 def send_chunk(sock, filename, chunk_index):
     path = adjust_for_storage_directory(filename)
@@ -527,7 +538,7 @@ def handle_message_reaction(sock, message, data):
                     peer_data = sel.get_key(new_connection).data
                     peer_data.filename = filename
                     peer_data.peer_chunks = set(user['chunks'])
-                    print(f"Set filename and peer_chunks for connection {new_connection.getpeername()}.")
+                    #print(f"Set filename and peer_chunks for connection {new_connection.getpeername()}.")
 
                 except Exception as e:
                     print(f"Error setting peer data for {new_connection}: {e}")
@@ -557,12 +568,12 @@ def handle_message_reaction(sock, message, data):
         chunk_data = bytes.fromhex(message_content["data"]) #Convert data from string form back to bytes
         senderside_hash = message_content["hash"]
 
-        print(f"Received Chunk {chunk_index} of {filename} with expected hash: {senderside_hash} from {sock}")
+        #print(f"Received Chunk {chunk_index} of {filename} with expected hash: {senderside_hash} from {sock}")
         receiverside_hash = calc_chunk_hash(chunk_data)
 
         #Check chunk validity before registering it
         if senderside_hash == receiverside_hash:
-            print(f"Chunk {chunk_index} accepted")
+            #print(f"Chunk {chunk_index} accepted")
 
             try:
                 set_chunk(adjust_for_storage_directory(filename), chunk_index, chunk_data)
@@ -628,7 +639,7 @@ def handle_connection(key, mask):
                     #We can extract first 4 bytes as this is the message length prefix
                     data.messageLength = struct.unpack('!I', data.incoming_buffer[:4])[0] #
                     data.incoming_buffer = data.incoming_buffer[4:]
-                    print(f"Expected Message Length {data.messageLength} bytes")
+                    #print(f"Expected Message Length {data.messageLength} bytes")
 
                 #If we do know the message length, we should process/clear incoming buffer once it has been fully received
                 if data.messageLength is not None and len(data.incoming_buffer) >= data.messageLength:
@@ -662,7 +673,7 @@ def handle_connection(key, mask):
                         if downloads[data.filename]["missing_chunks"]:#Check if the file still has missing chunks
                             options = downloads[data.filename]["missing_chunks"] & data.peer_chunks
                             if options:
-                                next_chunk = options.pop()
+                                next_chunk = random.choice(list(options))
                                 data.ongoing_chunk_request = next_chunk
                                 send_chunk_request(sock, data.filename, next_chunk)
                                 
@@ -693,9 +704,14 @@ def event_loop():
             for key, mask in events:
                     handle_connection(key, mask)
                 
-    except KeyboardInterrupt:
-        print("caught Keyboard Interrupt, Exiting")
+    except Exception as e:
+        print(f"Uncaught Exception occured: {e}")
     finally:
+        print("Closing all connections...")
+        for key in sel.get_map().keys():  # Iterate through registered sockets
+            sel.unregister(key.fileobj)  # Unregister socket
+            key.fileobj.close()  # Close the socket
+        print("All connections closed.")
         sel.close()
 
 

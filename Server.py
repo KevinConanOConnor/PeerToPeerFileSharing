@@ -299,12 +299,25 @@ def handle_connection(key, mask):
 
 try:
     while True:
-        events = sel.select(timeout = None)
-        for key, mask in events:
-            if key.data is None:
-                accept_incoming_connection(key.fileobj)
-            else:
-                handle_connection(key, mask)
+        try:
+            events = sel.select(timeout = None)
+            for key, mask in events:
+                try:
+                    if key.data is None:
+                        accept_incoming_connection(key.fileobj)
+                    else:
+                        handle_connection(key, mask)
+                except (ConnectionResetError, BrokenPipeError) as e:
+                    # Handle client disconnection errors
+                    print(f"Client forcibly closed connection: {e}")
+                    sel.unregister(key.fileobj)  # Unregister the socket
+                    key.fileobj.close() 
+                except Exception as e:
+                    print(f"Exception during connection handling: {e}")
+                    sel.unregister(key.fileobj)  # Unregister on other errors
+                    key.fileobj.close()  # Close the client socket
+        except Exception as e:
+            print(f"Rawr, exception on server: {e}")
 except KeyboardInterrupt:
     print("Caught keyboard interrupt, exiting")
 finally:
