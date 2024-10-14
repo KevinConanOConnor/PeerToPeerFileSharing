@@ -490,7 +490,11 @@ def handle_message_reaction(sock, message, data):
         return
 
     #Chunk Registration Reply. No outgoing message neccessary.
-    if message_type == "CHUNKREGREPLY":
+    if message_type == "CHUNKREGACK":
+        filename = message["filename"]
+
+        if message["content"] != "SUCCESS":
+            print(f"Chunks from {filename} could not be registered as it {filename} was not found on the server")
         return
     
     #File List Reply from Server. No outgoing message neccessary.
@@ -570,6 +574,21 @@ def handle_message_reaction(sock, message, data):
             except Exception as e:
                 print(f"Error saving chunk {chunk_index} from {filename}: {e}")
                 data.ongoing_chunk_request = None
+            
+            #register chunk with server
+            try:
+                outgoing_message["type"] = "CHUNKREG"
+                outgoing_message["content"] = chunk_index
+                outgoing_message["filename"] = filename
+                outgoing_message["listening_address"] = lsock_address
+
+
+                serverSocket = get_server_socket()
+                send_message_json(serverSocket, outgoing_message)
+
+            except Exception as e:
+                print(f"Failed to register chunk {chunk_index} from {filename} with server: {e}")
+
 
         #DIscard the chunk and remove it from the list of chunks we are waiting on/return it to missing chunks
         else:

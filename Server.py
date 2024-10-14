@@ -128,6 +128,37 @@ def handle_message_reaction(sock, data, message):
 
     #Chunk Registration from Client. Outgoing Message Neccessary.
     if message_type == "CHUNKREG":
+        chunk_index = message["content"]
+        filename = message["filename"]
+        listening_address = message["listening_address"]
+
+        if filename not in file_list:
+            outgoing_message["type"] = "CHUNKREGACK"
+            outgoing_message["filename"] = filename
+            outgoing_message['content'] = "ERROR WITH CHUNK REGISTRATION: FILE NOT FOUND ON SERVER LIST"
+            send_message_json(sock, outgoing_message)
+            return
+
+        fileholders = file_list[filename]["users"]
+
+        #Check whether this connection is already registered as a fileholder
+        if cid in fileholders.keys():
+            fileholders[cid]["chunks"].add(chunk_index)
+        else: #Need to register client as a chunkholder
+            fileholders[cid] = {
+                "chunks": {chunk_index}, #set with just empty chunk index
+                "listening_address": listening_address
+            }
+
+
+        #Send client message acknowledging chunk has been registered
+        outgoing_message["type"] = "CHUNKREGACK"
+        outgoing_message['filename'] = filename
+        outgoing_message['chunk_index'] = chunk_index
+        outgoing_message["content"] = "SUCCESS"
+        send_message_json(sock, outgoing_message)
+
+        print(f"Peers Sharing {filename}: {fileholders}")
         return
     
     #File List Request from Client. Outgoing Message Neccessary.
