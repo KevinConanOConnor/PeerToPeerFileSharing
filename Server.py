@@ -16,6 +16,7 @@ PORT = 65432  # Port to listen on (non-privileged ports are > 1023)
 file_list = {
     "Thisisntarealfileitsjustforshowpleasedontrequestit.txt": #Format for example
     {
+        "filesize" : 0,
         "chunkCount": 0, #Count of Chunks in file to make sure peers can't register the presence of non existing chunks
         #List of users with parts of the file, "Key here will be a cid string assigned when a connection is established"
         "users":
@@ -87,6 +88,7 @@ def handle_message_reaction(sock, data, message):
     if message_type == "FILEREG":
         #Unpack all message fields at top for clarity
         filename = message_content;
+        file_size = message["file_size"]
         chunk_count = message["chunk_count"]
         message_listening_address = message["listening_address"]
 
@@ -100,6 +102,7 @@ def handle_message_reaction(sock, data, message):
         # Register the file by adding it to the server's file list
         else:
             file_list[filename] = {
+                "filesize": file_size,
                 "chunkCount": chunk_count,
                 "users": {
                     cid: 
@@ -179,11 +182,12 @@ def handle_message_reaction(sock, data, message):
 
             outgoing_message["content"] = {
                 "filename": filename,
+                "filesize": file_list[filename]["filesize"],
                 "filechunkcount": file_list[filename]["chunkCount"],
                 "users": sharers,  # List of users and the chunks they have
             }
         else:  # Handle case where file wasn't found
-            outgoing_message["content"] = f"File '{filename}' not found."
+            outgoing_message["content"] = {"error": "File '{filename}' not found."}
 
         send_message_json(sock, outgoing_message)
 
