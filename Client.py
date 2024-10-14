@@ -28,6 +28,18 @@ FILEPATH = os.path.join(dir, 'files') #For where to share files from and downloa
 sel = selectors.DefaultSelector()
 input_queue = queue.Queue() #Queue to handle user requests
 ###########################################################################################################################################
+#Keep a global state of our current file downloads
+downloads = {
+    "thisisanexamplefilename.txt":{ #To clarify format:
+        "chunk_count": 100,
+        "received_chunks": set(),
+        "missing_chunks": set(range(100)),
+    },
+}
+
+
+
+###########################################################################################################################################
 #HASHING CODE
 
 def calc_file_hash(file_path):
@@ -170,15 +182,33 @@ def register_socket_selector(sock, selector = sel, connection_type = "client"):
     """
     events = selectors.EVENT_READ | selectors.EVENT_WRITE
 
-    #Buffers will be registered to each socket for incoming and outgoing data to ensure no data is lost from incomplete sends and receives.
-    data = types.SimpleNamespace(
-            type = connection_type,
+    data
+        
+    #Store extra state data for client connections (File + which chunks are available over this connection)
+    if connection_type == 'client':
+        data = types.SimpleNamespace(
+                type = connection_type,
 
-            incoming_buffer = b'',
-            messageLength = None, #to record how many bytes we should expect an incoming message to be (to make sure we receive messages in their entirety)
+                incoming_buffer = b'',
+                messageLength = None, #to record how many bytes we should expect an incoming message to be (to make sure we receive messages in their entirety)
 
-            outgoing_buffer =  b'',
-        )
+                outgoing_buffer =  b'',
+
+                filename = None,
+                peer_chunks = set(),
+                ongoing_chunk_request = None, #Keep track of what chunk should be requested on this connection
+            )
+        
+    else:
+        data = types.SimpleNamespace(
+                type = connection_type,
+
+                incoming_buffer = b'',
+                messageLength = None, #to record how many bytes we should expect an incoming message to be (to make sure we receive messages in their entirety)
+
+                outgoing_buffer =  b'',
+            )
+
     
     sel.register(sock, events, data = data)
 
@@ -384,10 +414,50 @@ def handle_user_command(command):
         send_message_json(server_sock, outgoing_message)
 
 
+def send_chunk_request(sock, filename, chunk_index):
+    """
+    send a chunk request to a peer
+    """
+
+    message = {
+        "type" : "CHUNKREQ",
+        "content": {
+            "filename": filename,
+            "chunks": [chunk_index]
+        }
+    }
+    send_message_json(sock, message)
+    print(f"Requested chunk {chunk_index} from peer {sock.getpeername()}.")
+
+def send_chunk(sock, filename, chunk_index):
+    path = adjust_for_storage_directory(filename)
+    chunk_content = peek_chunk(path,chunk_index)
+    hash = calc_chunk_hash(chunk_content)
+
+    message
+
+    if chunk_content:
+        message = {
+            "type": "CHUNKSEND",
+            "content": 
+            {
+                "filename": filename,
+                "chunk_index": chunk_index,
+                "data": chunk_content.hex(),#Hex to JSON-compatible format
+                "hash": hash,
+            }
+        }
+    else:
+        message = {
+            "type": "ERROR",
+            "content": f"Chunk {chunk_index} of '{filename}' not found on this client."
+        }
+
+    send_message_json(sock, message)
         
 
 #With the decoded message and type passed in, this function should handle the Server's reaction to the message based on the type and content
-def handle_message_reaction(sock, message):
+def handle_message_reaction(sock, message, data):
     """
 
         Arguments:
@@ -426,6 +496,7 @@ def handle_message_reaction(sock, message):
     #File Location Reply from Server No outgoing message neccessary.
     elif message_type == "FILELOCREPLY":
         filename = message_content['filename']
+        total_chunks = message_content["chunkCount"]
 
         print(f"Owners of {filename} have been received. Initiating connections.")
         connections_to_make = message_content['users']
@@ -435,27 +506,63 @@ def handle_message_reaction(sock, message):
             port = connection['address'][1]
             new_connection = open_connection(address, port)
 
-
-
-        #Connect to peers and initiate downloading from them
-
-        #print(message)
+        if filename not in downloads:
+            downloads[filename] = {
+                "chunk_count": total_chunks,
+                "received_chunks": set(),
+                "missing_chunks": set(range(total_chunks)),
+            }
+        #now that connections are open, requesting and handling requests will be done in event loop.
         return
     
+    #handle chunk requests from other peers. outgoing message neccesary
+    elif message_type == "CHUNKREQ":
+        filename = message_content["filename"]
+        chunks = message_content["chunks"]
+        for chunk_index in chunks:
+            send_chunk(sock, filename, chunk_index)
+        return
+
     #Received chunk from other client. No outgoing message neccessary.
-    elif message_type == "CHUNKACK":
+    elif message_type == "CHUNKSEND":
+        filename = message_content["filename"]
+        chunk_index = message_content["chunk_index"]
+        chunk_data = bytes.fromhex(message_content["data"]) #Convert data from string form back to bytes
+        senderside_hash = message_content["hash"]
+
+        print(f"Received Chunk {chunk_index} of {filename} with expected hash: {senderside_hash} from {sock}")
+        receiverside_hash = calc_chunk_hash(chunk_data)
+
+        #Check chunk validity before registering it
+        if senderside_hash == receiverside_hash:
+            print(f"Chunk {chunk_index} accepted")
+
+            try:
+                set_chunk(adjust_for_storage_directory(filename), chunk_index, chunk_data)
+                downloads[filename]["received_chunks"].add(chunk_index)
+                downloads[filename]["missing_chunks"].discard(chunk_index)
+                data.ongoing_chunk_request = None
+
+            
+            except Exception as e:
+                print(f"Error saving chunk {chunk_index} from {filename}: {e}")
+                data.ongoing_chunk_request = None
+
+        #DIscard the chunk and remove it from the list of chunks we are waiting on/return it to missing chunks
+        else:
+            data.ongoing_chunk_request = None
+
+
         return
     
     #RECEIVED CHUNK REQUEST FROM OTHER CLIENT. REPLY NECCESSARY
-    elif message_type == 105:
-        outgoing_message["type"] = "SENDCHUNK"
+    elif message_type == "CHUNKREQ":
+        outgoing_message["type"] = "CHUNKSEND"
         
         send_message_json(outgoing_message)
     
     else:
         print(f"Unknown message Type received: {message_type}: {message_content} ", )
-
-    
 
 
 def handle_connection(key, mask):
@@ -495,7 +602,7 @@ def handle_connection(key, mask):
                     #NEED TO PROCESS MESSAGE HERE (For now just print the processed message)
                     print(message)
 
-                    handle_message_reaction(sock, message)
+                    handle_message_reaction(sock, message, data)
 
                     data.incoming_buffer = data.incoming_buffer[data.messageLength: ] #Clear the message from buffer
                     data.messageLength = None #Reset message length so that we know there's no message currently
@@ -508,13 +615,25 @@ def handle_connection(key, mask):
                 sel.unregister(sock)
                 sock.close()
                 
-        if mask & selectors.EVENT_WRITE and data.outgoing_buffer:
-            sent = sock.send(data.outgoing_buffer) #Non-blocking send (Hopefully the message should have already been encoded prior to being put into the buffer)
-            data.outgoing_buffer = data.outgoing_buffer[sent: ] #Remove sent part from the buffer
+        if mask & selectors.EVENT_WRITE:
+            if data.outgoing_buffer:
+                sent = sock.send(data.outgoing_buffer) #Non-blocking send (Hopefully the message should have already been encoded prior to being put into the buffer)
+                data.outgoing_buffer = data.outgoing_buffer[sent: ] #Remove sent part from the buffer
+            
+            elif data.type == "peer":
+                if data.ongoing_chunk_request is None:
+                    if downloads.get(data.filename): #Check if file is still in the list of files we need to download
+                        if downloads[data.filename]["missing_chunks"]:#Check if the file still has missing chunks
+                            options = downloads[data.filename]["missing_chunks"] & data.peer_chunks
+                            if options:
+                                next_chunk = options.pop()
+                                send_chunk_request(sock, data.filename, next_chunk)
+                                
 
 
 #Main event loop to handle checking sockets and user input
 def event_loop():
+    #Run user input on a separate thread so that socket related code is not blocked and vice versa.
     threading.Thread(target = receive_user_input, daemon=True).start()
 
 
@@ -548,11 +667,7 @@ if __name__ == "__main__":
 
     #chunksFunctionsTest();
 
-    msg = {
-        "type": "Yaahhhhh",
-        "content": "yaaahhhh"
-    }
-    send_message_json(serverSock, msg)
+
     event_loop()
 
 

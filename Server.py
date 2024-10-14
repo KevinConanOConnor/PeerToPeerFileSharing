@@ -62,6 +62,7 @@ def unpack_json_message(received_message):
 
     return json.loads(json_message)
 
+
 #With the decoded message and type passed in, this function should handle the Server's reaction to the message based on the type and content
 def handle_message_reaction(sock, data, message):
     """
@@ -178,7 +179,8 @@ def handle_message_reaction(sock, data, message):
 
             outgoing_message["content"] = {
                 "filename": filename,
-                "users": sharers  # List of users and the chunks they have
+                "filechunkcount": file_list[filename]["chunkCount"],
+                "users": sharers,  # List of users and the chunks they have
             }
         else:  # Handle case where file wasn't found
             outgoing_message["content"] = f"File '{filename}' not found."
