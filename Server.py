@@ -20,7 +20,11 @@ file_list = {
         #List of users with parts of the file, "Key here will be a cid string assigned when a connection is established"
         "users":
         {
-            "user1": {"chunks" : {0, 1, 2}},
+            "user1": 
+            {
+                "chunks" : {0, 1, 2},
+                "listening_address": "imaginetheresalisteningaddresshere"
+            },
         },
     },
 }
@@ -80,14 +84,16 @@ def handle_message_reaction(sock, data, message):
 
     #File Registration from Client. Outgoing Message Neccessary.
     if message_type == "FILEREG":
+        #Unpack all message fields at top for clarity
         filename = message_content;
         chunk_count = message["chunk_count"]
+        message_listening_address = message["listening_address"]
 
         registration_success = True
 
         #Check if file of same name already registered
         if filename in file_list:
-            print(f"File '{filename}' is already registered.")
+            print(f"There is already a file registered under the name:  '{filename}'")
             registration_success = False
 
         # Register the file by adding it to the server's file list
@@ -95,7 +101,11 @@ def handle_message_reaction(sock, data, message):
             file_list[filename] = {
                 "chunkCount": chunk_count,
                 "users": {
-                    cid: {"chunks": set(range(chunk_count))}
+                    cid: 
+                    {
+                        "chunks": set(range(chunk_count)),
+                        "listening_address": message_listening_address
+                    }
                 }
             }
             print(f"File '{filename}' registered with {chunk_count} chunks by user {cid}.")
@@ -138,22 +148,24 @@ def handle_message_reaction(sock, data, message):
             cids_to_remove = []
 
             # For each user (cid) who has chunks of this file, we need to find their socket address to pass on to client so they can open a connection
-            # Should also take this opportunity to clear any cids which do not appear on our selectory (peers who have left) from the list.
+            # Should also take this opportunity to clear any cids which do not appear on our selectors (peers who have left) from the list.
             # Additionally, if we realize there are no peers left with the file. We should probably let the client know and delete the file from the server
-            for user_cid, set_of_chunks in file_entry["users"].items(): #items should return a couple consisting of a cid and a set of the cunks they have
+            for user_cid, user_info in file_entry["users"].items(): #items should return a tuple consisting of a cid and a dictionary containing the set of chunks they have and their listening address
                 user_addr = None
+                set_of_chunks = user_info["chunks"]
+                listening_address = user_info["listening_address"]
 
-                #Try to find the address corresponding to the relevant cid
+                #Try to find the address corresponding to the relevant cid in our list of connections
                 for key, value in sel.get_map().items():
                     if value.data is not None:
-                        if value.data.cid == cid:
+                        if value.data.cid == user_cid:
                             user_addr = value.fileobj.getpeername()
 
                 #If an address if found for the cid, we should add their chunk information. Otherwise we should remove the cid the file list.
                 if user_addr is not None:
                     sharers.append({
-                        "address": user_addr,  # (IP, port) tuple
-                        "chunks": list(set_of_chunks['chunks'])  # Get the list of hcunks held and convert set to list for JSON serialization
+                        "address": listening_address,  # (IP, port) tuple. Here we are giving the client the listening address so they can bind themself (we are not giving them the same PORT we are connected to)
+                        "chunks": list(set_of_chunks),  # Get the list of hcunks held and convert set to list for JSON serialization
                     })
 
                 else:

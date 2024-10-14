@@ -58,7 +58,8 @@ def calc_chunk_hash(chunk):
 lsock =  socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 lsock.bind((HOST, 0))
     
-print("Listening on ", lsock)
+lsock_address = lsock.getsockname()
+print("Listening on ", lsock_address)
 lsock.listen()
 
 lsock.setblocking(False)
@@ -169,7 +170,6 @@ def register_socket_selector(sock, selector = sel, connection_type = "client"):
     """
     events = selectors.EVENT_READ | selectors.EVENT_WRITE
 
-    
     #Buffers will be registered to each socket for incoming and outgoing data to ensure no data is lost from incomplete sends and receives.
     data = types.SimpleNamespace(
             type = connection_type,
@@ -362,7 +362,12 @@ def handle_user_command(command):
     elif action ==  "register":
         print(f"Attempting to register file {words[1]} with server")
         outgoing_message["type"] = "FILEREG"
+
+        #words[1] will be filename
         outgoing_message["content"] = words[1]
+        
+        #need to attach address of listening socket to file so server can tell other clients where to bind
+        outgoing_message["listening_address"] = lsock_address
 
         #Add local filepath to words to filename
         file_path = adjust_for_storage_directory(words[1])
@@ -428,7 +433,7 @@ def handle_message_reaction(sock, message):
         for connection in connections_to_make:
             address = connection['address'][0]
             port = connection['address'][1]
-            open_connection(address, port)
+            new_connection = open_connection(address, port)
 
 
 
