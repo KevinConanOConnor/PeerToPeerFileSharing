@@ -9,6 +9,7 @@ import hashlib
 import json
 import math
 import random
+import traceback
 
 #User input handled on a separate thread from sockets
 import threading
@@ -85,7 +86,7 @@ def adjust_for_storage_directory(fileName, path = FILEPATH):
     """
     Code for adjusting fileName's to include the filepath of our storage directory since I will need to reuse this a lot.
     """
-    return os.path.join(FILEPATH, fileName)
+    return os.path.join(path, fileName)
 
 
 def get_files_in_directory(directory = FILEPATH):
@@ -198,6 +199,7 @@ def register_socket_selector(sock, selector = sel, connection_type = "client"):
                 filename = None,
                 peer_chunks = set(),
                 ongoing_chunk_request = None, #Keep track of what chunk should be requested on this connection
+                file_path = None,
             )
         sel.register(sock, events, data = data)
         
@@ -329,26 +331,6 @@ def receive_user_input():
         if user_input:
             input_queue.put(user_input) #Send input to this queue, when this queue is full it should be handled
 
-def register_file(file_name):
-    actualPath = adjust_for_storage_directory(file_name)
-
-
-    if not os.path.exists(file_name):
-        print(f"The file {file_name} is not present in your files directory")
-        return
-    
-    #DEFINE File Registration Message Sizes so that sender knows how many bytes each string will be
-    FILENAME_SIZE = 50
-    HASH_SIZE = 64
-
-
-    filesize = os.path.getsize(FILEPATH)
-    
-
-
-    #Calculate Chunk Size
-    
-    print('blah')
 
 def debug_selector_map():
     # Iterate over the registered sockets in the selector
@@ -367,6 +349,38 @@ def get_server_socket():
     print("Server socket not found.")
     return None
 
+def register_file(filename, serverSocket, file_path = None):
+    outgoing_message = {
+    }
+    print(f"Attempting to register file {filename} with server")
+    outgoing_message["type"] = "FILEREG"
+
+    #words[1] will be filename
+    outgoing_message["content"] = filename
+    
+    #need to attach address of listening socket to file so server can tell other clients where to bind
+    outgoing_message["listening_address"] = lsock_address
+    
+    final_file_path = adjust_for_storage_directory(filename)
+
+    #Change filepath if not using base directory
+    if file_path is not None:
+        final_file_path = os.path.join(FILEPATH, file_path, filename)
+        outgoing_message["file_path"] = final_file_path
+
+    #print(final_file_path)
+    file_size, number_of_chunks = calc_number_of_chunks(final_file_path)
+
+    outgoing_message["file_size"] = file_size
+    outgoing_message["chunk_count"] = number_of_chunks
+    #print(outgoing_message)
+    send_message_json(serverSocket, outgoing_message)
+
+def get_filenames_in_directory(directory):
+    filenames = []
+    for _, _, files in os.walk(directory):
+        filenames.extend(files)  # Just append the filenames, ignoring paths
+    return filenames
 
 #Function to handle/process user input requests
 def handle_user_command(command):
@@ -404,24 +418,17 @@ def handle_user_command(command):
         print(f"Command Not In Correct Format")
     
     elif action ==  "register":
-        print(f"Attempting to register file {words[1]} with server")
-        outgoing_message["type"] = "FILEREG"
-
-        #words[1] will be filename
-        outgoing_message["content"] = words[1]
+        register_file(words[1],server_sock)
         
-        #need to attach address of listening socket to file so server can tell other clients where to bind
-        outgoing_message["listening_address"] = lsock_address
+    elif action == "directoryregister":
+        print(f"Attempting to register directory {words[1]} with server")
 
-        #Add local filepath to words to filename
-        file_path = adjust_for_storage_directory(words[1])
+        directory_path = adjust_for_storage_directory(words[1])
+        files = get_filenames_in_directory(directory_path)
+        for file_name in files:
+            print(directory_path)
+            register_file(file_name, server_sock, directory_path)
 
-        file_size, number_of_chunks = calc_number_of_chunks(file_path)
-    
-        outgoing_message["file_size"] = file_size
-        outgoing_message["chunk_count"] = number_of_chunks
-        send_message_json(server_sock, outgoing_message)
-        
 
     elif action == "download":
         (f"Attempting to download file {words[1]} from system")
@@ -432,23 +439,39 @@ def handle_user_command(command):
 
 
 
-def send_chunk_request(sock, filename, chunk_index):
+def send_chunk_request(sock, filename, chunk_index, file_path = None):
     """
     send a chunk request to a peer
     """
 
-    message = {
-        "type" : "CHUNKREQ",
-        "content": {
-            "filename": filename,
-            "chunks": [chunk_index]
+    if not file_path:
+        message = {
+            "type" : "CHUNKREQ",
+            "content": {
+                "filename": filename,
+                "chunks": [chunk_index]
+            }
         }
-    }
-    send_message_json(sock, message)
+        send_message_json(sock, message)
+
+    else:
+        message = {
+            "type" : "CHUNKREQ",
+            "content": {
+                "filename": filename,
+                "chunks": [chunk_index],
+                "file_path": file_path
+            }
+        }
+        send_message_json(sock, message)
     #print(f"Requested chunk {chunk_index} from peer {sock.getpeername()}.")
 
-def send_chunk(sock, filename, chunk_index):
+def send_chunk(sock, filename, chunk_index, file_path = None):
     path = adjust_for_storage_directory(filename)
+
+    if file_path:
+        path = file_path
+
     chunk_content = peek_chunk(path,chunk_index)
     hash = calc_chunk_hash(chunk_content)
 
@@ -471,8 +494,7 @@ def send_chunk(sock, filename, chunk_index):
         }
         send_message_json(sock, message)
 
-    
-        
+
 
 #With the decoded message and type passed in, this function should handle the Server's reaction to the message based on the type and content
 def handle_message_reaction(sock, message, data):
@@ -531,6 +553,7 @@ def handle_message_reaction(sock, message, data):
         for user in users_to_connect_to:
             address = user['address'][0]
             port = user['address'][1]
+            
             new_connection = open_connection(address, port)
             #Initialize connection's state data
             if new_connection:
@@ -538,6 +561,11 @@ def handle_message_reaction(sock, message, data):
                     peer_data = sel.get_key(new_connection).data
                     peer_data.filename = filename
                     peer_data.peer_chunks = set(user['chunks'])
+
+                    #Assign file_path if neccesary
+                    file_path = user.get("file_path")
+                    if(file_path):
+                        peer_data.file_path = file_path
                     #print(f"Set filename and peer_chunks for connection {new_connection.getpeername()}.")
 
                 except Exception as e:
@@ -557,8 +585,10 @@ def handle_message_reaction(sock, message, data):
     elif message_type == "CHUNKREQ":
         filename = message_content["filename"]
         chunks = message_content["chunks"]
+        file_path = message_content.get("file_path")
+
         for chunk_index in chunks:
-            send_chunk(sock, filename, chunk_index)
+            send_chunk(sock, filename, chunk_index, file_path)
         return
 
     #Received chunk from other client. No outgoing message neccessary.
@@ -675,7 +705,7 @@ def handle_connection(key, mask):
                             if options:
                                 next_chunk = random.choice(list(options))
                                 data.ongoing_chunk_request = next_chunk
-                                send_chunk_request(sock, data.filename, next_chunk)
+                                send_chunk_request(sock, data.filename, next_chunk, data.file_path)
                                 
                                 
 
@@ -705,12 +735,14 @@ def event_loop():
                     handle_connection(key, mask)
                 
     except Exception as e:
-        print(f"Uncaught Exception occured: {e}")
+            print(e)
+            traceback.print_exc()
+
     finally:
         print("Closing all connections...")
-        for key in sel.get_map().keys():  # Iterate through registered sockets
-            sel.unregister(key.fileobj)  # Unregister socket
-            key.fileobj.close()  # Close the socket
+        for value in list(sel.get_map().values()):  # Iterate through registered sockets
+            sel.unregister(value.fileobj)  # Unregister socket
+            value.fileobj.close()  # Close the socket
         print("All connections closed.")
         sel.close()
 

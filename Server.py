@@ -92,6 +92,8 @@ def handle_message_reaction(sock, data, message):
         chunk_count = message["chunk_count"]
         message_listening_address = message["listening_address"]
 
+            
+
         registration_success = True
 
         #Check if file of same name already registered
@@ -100,6 +102,22 @@ def handle_message_reaction(sock, data, message):
             registration_success = False
 
         # Register the file by adding it to the server's file list
+        elif message.get("file_path"):
+            file_list[filename] = {
+                "filesize": file_size,
+                "chunkCount": chunk_count,
+                "users": {
+                    cid: 
+                    {
+                        "chunks": set(range(chunk_count)),
+                        "listening_address": message_listening_address,
+                        "file_path" : message.get("file_path")
+                    }
+                }
+            }
+            print(f"File '{filename}' registered with {chunk_count} chunks by user {cid}.")
+
+        
         else:
             file_list[filename] = {
                 "filesize": file_size,
@@ -189,6 +207,7 @@ def handle_message_reaction(sock, data, message):
                 user_addr = None
                 set_of_chunks = user_info["chunks"]
                 listening_address = user_info["listening_address"]
+                file_path = user_info.get("file_path")
 
                 #Try to find the address corresponding to the relevant cid in our list of connections
                 for key, value in sel.get_map().items():
@@ -198,11 +217,17 @@ def handle_message_reaction(sock, data, message):
 
                 #If an address if found for the cid, we should add their chunk information. Otherwise we should remove the cid the file list.
                 if user_addr is not None:
-                    sharers.append({
-                        "address": listening_address,  # (IP, port) tuple. Here we are giving the client the listening address so they can bind themself (we are not giving them the same PORT we are connected to)
-                        "chunks": list(set_of_chunks),  # Get the list of hcunks held and convert set to list for JSON serialization
-                    })
-
+                    if not file_path:
+                        sharers.append({
+                            "address": listening_address,  # (IP, port) tuple. Here we are giving the client the listening address so they can bind themself (we are not giving them the same PORT we are connected to)
+                            "chunks": list(set_of_chunks),  # Get the list of hcunks held and convert set to list for JSON serialization
+                        })
+                    if file_path:
+                        sharers.append({
+                            "address": listening_address,  
+                            "chunks": list(set_of_chunks),  
+                            "file_path": file_path #pass along the file_path in the case that the file is the origin and file originates from a directory that is not the base
+                        })
                 else:
                     print(f"User {user_cid} not found in selector, marking for removal from {filename}'s list of owners")
                     cids_to_remove.append(user_cid)
