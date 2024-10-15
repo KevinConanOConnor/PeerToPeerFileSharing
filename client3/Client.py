@@ -718,22 +718,28 @@ def event_loop():
 
     try:
         while True:
-            # Exit event loop there are no currently registered sockets to avoid errors
-            """
-            if not sel.get_map().keys():
-                print("No sockets Registered")
-                break
-            """
-            #Check for user input
-            while not input_queue.empty():
-                userCommand = input_queue.get()
-                handle_user_command(userCommand)
+            try:
+                #Check for user input
+                while not input_queue.empty():
+                    userCommand = input_queue.get()
+                    handle_user_command(userCommand)
 
 
-            events = sel.select(timeout=None)
-            for key, mask in events:
-                    handle_connection(key, mask)
-                
+                events = sel.select(timeout=None)
+                for key, mask in events:
+                    try:
+                        handle_connection(key, mask)
+                    except (ConnectionResetError, BrokenPipeError) as e:
+                        # Handle client disconnection errors
+                        print(f"Client forcibly closed connection: {e}")
+                        sel.unregister(key.fileobj)  # Unregister the socket
+                        key.fileobj.close() 
+                    except Exception as e:
+                        print(f"Exception during connection handling: {e}")
+                        sel.unregister(key.fileobj)  # Unregister on other errors
+                        key.fileobj.close()  # Close the client socket
+            except Exception as e:
+                print(f"Rawr, exception on server: {e}")
     except Exception as e:
             print(e)
             traceback.print_exc()
